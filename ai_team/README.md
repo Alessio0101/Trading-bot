@@ -48,6 +48,14 @@ ai_team/system.sh telefon   # open the dashboard to phones on the same Wi-Fi (no
 ai_team/system.sh local     # back to this computer only (default)
 ```
 
+### Windows
+
+Double-click **`PORNESTE-AI-TELEFON.bat`** in the repository root. It installs the packages on
+the first run, starts the gateway, the runner and the dashboard, and prints the link to open on
+the phone. **`OPRESTE-AI.bat`** stops everything. They call `ai_team/system.ps1`
+(`start|stop|status|telefon|local`), written for Windows PowerShell 5.1. Python 3.11+ must be
+installed with "Add python.exe to PATH". These scripts have not yet been run on Windows.
+
 ### From your phone
 
 Run `ai_team/system.sh telefon` on the computer. It prints an address such as
