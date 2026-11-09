@@ -44,6 +44,16 @@ HYPOTHESES = {
 }
 
 
+STRATEGY_HYPOTHESIS = {
+    "trend_following": "trend_ema",
+    "swing": "trend_ema",
+    "momentum": "momentum_24",
+    "breakout": "momentum_24",
+    "mean_reversion": "reversal_6",
+}
+OOS_FRACTION = 0.3
+
+
 def quantitative_researcher(ctx: AgentContext) -> HandlerResult:
     c = ctx.ohlcv(limit=720)["close"]
     fwd = c.pct_change(6).shift(-6)
@@ -55,12 +65,25 @@ def quantitative_researcher(ctx: AgentContext) -> HandlerResult:
         hit = float((np.sign(sig[ok]) == np.sign(fwd[ok])).mean()) if ok.any() else 0.0
         results[name] = {"ic": round(ic, 4), "hit_rate": round(hit, 3)}
     best = max(results, key=lambda k: results[k]["ic"])
-    # Hypotheses map to strategy rules the backtester can test.
-    candidates = ["trend_following", "momentum", "mean_reversion", "breakout", "swing"]
+    # Every testable strategy still goes to the independent backtest (the reviewer,
+    # not the researcher, decides), but ordered by the evidence for its hypothesis.
+    ranked = sorted(
+        ((s, h, results[h]["ic"]) for s, h in STRATEGY_HYPOTHESIS.items()),
+        key=lambda x: x[2],
+        reverse=True,
+    )
+    candidates = [s for s, _, _ in ranked]
+    supported = [s for s, _, ic in ranked if ic > 0]
     return HandlerResult(
         f"Best hypothesis {best} (IC {results[best]['ic']:+.3f}); "
-        f"sending {len(candidates)} candidate strategies to backtesting",
-        {"hypotheses": results, "best": best, "candidate_strategies": candidates},
+        f"{len(supported)}/{len(candidates)} strategies have positive-IC support: {supported}",
+        {
+            "hypotheses": results,
+            "best": best,
+            "candidate_strategies": candidates,
+            "ranking": [{"strategy": s, "hypothesis": h, "ic": ic} for s, h, ic in ranked],
+            "supported_strategies": supported,
+        },
     )
 
 
@@ -128,9 +151,17 @@ def backtesting_specialist(ctx: AgentContext) -> HandlerResult:
     # Discretionary strategies (event-driven, pairs) have no deterministic rule to
     # replay; they are reported as untestable so the reviewer rejects them.
     untestable = sorted(n for n in names if n not in STRATEGY_RULES)
-    results = {
-        n: backtest(df, STRATEGY_RULES[n](df), ctx.task.timeframe) for n in names if n in STRATEGY_RULES
-    }
+    split = int(len(df) * (1 - OOS_FRACTION))
+    results = {}
+    for n in names:
+        if n not in STRATEGY_RULES:
+            continue
+        # Signals use the full history for indicator warm-up; the out-of-sample
+        # metrics only score the final, unseen segment.
+        pos = STRATEGY_RULES[n](df)
+        m = backtest(df, pos, ctx.task.timeframe)
+        m["out_of_sample"] = backtest(df.iloc[split:], pos.iloc[split:], ctx.task.timeframe)
+        results[n] = m
     best = max(results, key=lambda k: results[k]["sharpe"]) if results else None
     best_txt = f"best {best} (Sharpe {results[best]['sharpe']:.2f})" if best else "nothing testable"
     return HandlerResult(
@@ -143,6 +174,7 @@ def backtesting_specialist(ctx: AgentContext) -> HandlerResult:
             "timeframe": ctx.task.timeframe,
             "fee": FEE,
             "slippage": SLIPPAGE,
+            "out_of_sample_fraction": OOS_FRACTION,
         },
     )
 

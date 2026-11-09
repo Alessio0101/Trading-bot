@@ -131,6 +131,15 @@ def independent_risk_reviewer(ctx: AgentContext) -> HandlerResult:
             reasons.append(f"Sharpe {m['sharpe']:.2f} <= {MIN_SHARPE}")
         if m["max_drawdown"] < MAX_DD:
             reasons.append(f"drawdown {m['max_drawdown']:.0%}")
+        if m["total_return"] <= 0:
+            reasons.append(f"net return {m['total_return']:.2%} after costs")
+        oos = m.get("out_of_sample")
+        if oos is None:
+            reasons.append("no out-of-sample test")
+        elif oos["trades"] == 0:
+            reasons.append("no out-of-sample trades")
+        elif oos["sharpe"] <= MIN_SHARPE:
+            reasons.append(f"out-of-sample Sharpe {oos['sharpe']:.2f} <= {MIN_SHARPE}")
         verdicts[name] = {"verdict": "REJECT" if reasons else "APPROVE", "reasons": reasons}
     approved = [k for k, v in verdicts.items() if v["verdict"] == "APPROVE"]
     return HandlerResult(
@@ -138,7 +147,13 @@ def independent_risk_reviewer(ctx: AgentContext) -> HandlerResult:
         {
             "verdicts": verdicts,
             "approved": approved,
-            "standards": {"min_trades": MIN_TRADES, "min_sharpe": MIN_SHARPE, "max_drawdown": MAX_DD},
+            "standards": {
+                "min_trades": MIN_TRADES,
+                "min_sharpe": MIN_SHARPE,
+                "max_drawdown": MAX_DD,
+                "net_return": "> 0 after fees and slippage",
+                "out_of_sample": "at least 1 trade and Sharpe > 0 on the final 30%",
+            },
         },
     )
 

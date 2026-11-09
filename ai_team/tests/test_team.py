@@ -163,3 +163,59 @@ def test_backtest_charges_fee_and_slippage(market):
     r = backtest(df, pos, "1h")
     switches = pos.shift().fillna(0).diff().abs().fillna(0).sum()
     assert r["total_return"] == pytest.approx((1 - (FEE + SLIPPAGE)) ** switches - 1, rel=1e-9)
+
+
+def _bt_report(**metrics):
+    from ai_team.models import Report
+
+    base = {
+        "trades": 10,
+        "sharpe": 1.5,
+        "max_drawdown": -0.05,
+        "total_return": 0.08,
+        "out_of_sample": {"trades": 3, "sharpe": 0.9},
+    }
+    return Report("backtesting-specialist", "t", "ok", "", {"results": {"s": {**base, **metrics}}})
+
+
+@pytest.mark.parametrize(
+    ("metrics", "reason"),
+    [
+        ({}, None),
+        ({"trades": 1}, "only 1 trades"),
+        ({"sharpe": -0.2}, "Sharpe"),
+        ({"max_drawdown": -0.4}, "drawdown"),
+        ({"total_return": -0.01}, "net return"),
+        ({"out_of_sample": {"trades": 0, "sharpe": 0.0}}, "no out-of-sample trades"),
+        ({"out_of_sample": {"trades": 4, "sharpe": -0.5}}, "out-of-sample Sharpe"),
+        ({"out_of_sample": None}, "no out-of-sample test"),
+    ],
+)
+def test_independent_risk_reviewer_standards(market, metrics, reason):
+    from ai_team.models import Task
+    from ai_team.runtime import AgentContext, run_specialist
+
+    rep = _bt_report(**metrics)
+    if metrics.get("out_of_sample", 1) is None:
+        del rep.metrics["results"]["s"]["out_of_sample"]
+    ctx = AgentContext(Task("independent-risk-reviewer", "t"), market, {"backtesting-specialist": rep})
+    v = run_specialist("independent-risk-reviewer", ctx).metrics["verdicts"]["s"]
+    if reason is None:
+        assert v["verdict"] == "APPROVE", v
+    else:
+        assert v["verdict"] == "REJECT"
+        assert any(reason in r for r in v["reasons"]), v["reasons"]
+
+
+def test_quantitative_researcher_ranks_by_evidence(market):
+    from ai_team.models import Task
+    from ai_team.runtime import AgentContext, run_specialist
+    from ai_team.specialists.quant import STRATEGY_HYPOTHESIS
+
+    m = run_specialist(
+        "quantitative-researcher", AgentContext(Task("quantitative-researcher", "t"), market)
+    ).metrics
+    ics = [r["ic"] for r in m["ranking"]]
+    assert ics == sorted(ics, reverse=True)
+    assert set(m["candidate_strategies"]) == set(STRATEGY_HYPOTHESIS)
+    assert m["supported_strategies"] == [r["strategy"] for r in m["ranking"] if r["ic"] > 0]

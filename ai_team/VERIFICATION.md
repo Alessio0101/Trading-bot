@@ -37,7 +37,7 @@ Overall: **PASS**
 | 8 | liquidity-analyst | functional | ok | yes | Spread 2.00 bps, depth ±1% 329,408,739 quote, score 0.98 |
 | 9 | order-flow-analyst | functional | ok | yes | Trade imbalance +0.07, book imbalance +0.47, flow bias +0.23 |
 | 10 | market-regime-analyst | functional | ok | yes | Regime trending/calm (efficiency 0.61, vol pct 26%) |
-| 11 | quantitative-researcher | functional | ok | yes | Best hypothesis momentum_24 (IC +0.069); sending 5 candidate strategies to backtesting |
+| 11 | quantitative-researcher | functional | ok | yes | Best hypothesis momentum_24 (IC +0.069); 4/5 strategies have positive-IC support: ['moment |
 | 12 | statistical-arbitrage-researcher | functional | ok | yes | BTC/USDT~ETH/USDT: beta 1.079, z -0.02, half-life 18.6 bars |
 | 13 | factor-researcher | functional | ok | yes | Top factor rank: SOL/USDT |
 | 14 | machine-learning-researcher | needs_integration | needs_integration | yes | Model training is delegated to Qlib/RD-Agent, which are not installed. |
@@ -67,7 +67,7 @@ Overall: **PASS**
 | 38 | portfolio-risk-analyst | functional | ok | yes | Gross exposure 40% of equity, 1-bar VaR95 41.78, within advisory limits |
 | 39 | drawdown-monitor | functional | ok | yes | Drawdown now -0.09%, worst -0.09%; pause=False |
 | 40 | stress-testing-specialist | functional | ok | yes | Worst scenario loss -698.07 on gross 1994.49 |
-| 41 | independent-risk-reviewer | functional | ok | yes | Approved 4/5 strategies: ['trend_following', 'momentum', 'breakout', 'swing'] |
+| 41 | independent-risk-reviewer | functional | ok | yes | Approved 4/5 strategies: ['momentum', 'breakout', 'trend_following', 'swing'] |
 | 42 | compliance-officer | functional | ok | yes | Compliance PASS (5/5) |
 | 43 | algorithmic-trading-engineer | functional | ok | yes | 1 freqtrade strategies found, all valid=True |
 | 44 | strategy-deployment-engineer | functional | ok | yes | Deployment checks 4/4 passed |
@@ -86,4 +86,4 @@ Overall: **PASS**
 - Qlib: NOT installed - used by 6 agent(s)
 - LangGraph: installed unknown - used by 1 agent(s)
 - NautilusTrader: NOT installed - used by 8 agent(s)
-- freqtrade (paper bot): installed 2026.11-dev-48710f6 - used by 2 agent(s)
+- freqtrade (paper bot): installed 2026.11-dev-cac11c1 - used by 2 agent(s)

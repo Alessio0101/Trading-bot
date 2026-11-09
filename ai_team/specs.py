@@ -263,6 +263,7 @@ SPECS: list[Spec] = [
         [
             "Formulate hypotheses (e.g. momentum persistence)",
             "Measure forward-return edge per hypothesis",
+            "Rank candidate strategies by the evidence for their hypothesis",
             "Send promising hypotheses to the Backtesting Specialist",
         ],
         [OHLCV],
@@ -321,7 +322,8 @@ SPECS: list[Spec] = [
         "quant_research",
         "Backtest strategies with fees and report robust metrics.",
         [
-            "Run vectorised long-only backtests with fees/slippage",
+            "Run vectorised long-only backtests with fees and slippage",
+            "Score the final 30% of bars separately as out-of-sample",
             "Report return, Sharpe, drawdown, trades",
             "Send results to the Independent Risk Reviewer",
         ],
@@ -695,7 +697,8 @@ SPECS: list[Spec] = [
         "risk",
         "Independently approve or reject strategies before proposals reach the gateway.",
         [
-            "Review backtest robustness (trades, Sharpe, drawdown)",
+            "Review backtest robustness (trades, Sharpe, drawdown, net return)",
+            "Require positive out-of-sample Sharpe with at least one trade",
             "Reject strategies that fail minimum standards",
             "Never reviews its own work",
         ],
