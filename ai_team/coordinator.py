@@ -74,7 +74,7 @@ UPSTREAM_OF = {  # recipient -> upstream senders (for workflow hand-off messages
     "slippage-analyst": ["liquidity-analyst", "execution-trader"],
     "transaction-cost-analyst": ["slippage-analyst"],
 }
-WORKFLOW_OF = {}
+WORKFLOW_OF: dict[tuple[str, str], str] = {}
 for _wf, _agents in WORKFLOWS.items():
     for _a, _b in pairwise(_agents):
         WORKFLOW_OF.setdefault((_a, _b), _wf)
@@ -265,7 +265,7 @@ class Coordinator:
         return {"proposals": results, "agents": {a: r.status for a, r in inbox.items()}}
 
     def _compare(self, cycle_id: str, pair: str, inbox: dict[str, Report]) -> None:
-        views = {}
+        views: dict[str, list[str]] = {}
         for a, r in inbox.items():
             for s in r.signals:
                 views.setdefault(s.side, []).append(a)
@@ -426,9 +426,7 @@ class Coordinator:
         return out
 
 
-def _with_candidates(report: Report | None, candidates: list[str]) -> Report | None:
-    if report is None:
-        return None
+def _with_candidates(report: Report, candidates: list[str]) -> Report:
     clone = Report(**{**report.__dict__, "metrics": {**report.metrics, "candidate_strategies": candidates}})
     return clone
 

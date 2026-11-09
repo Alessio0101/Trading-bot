@@ -340,4 +340,5 @@ exclude = [
 
 [tool.codespell]
 ignore-words-list = "coo,fo,strat,zar,selectin,dependant"
-skip="*.svg,./user_data,freqtrade/rpc/api_server/ui/installed,freqtrade/exchange/*.json"
+# easy-start/ user-facing text is Romanian by design; skip only those files.
+skip="*.svg,./user_data,freqtrade/rpc/api_server/ui/installed,freqtrade/exchange/*.json,easy-start/README.md,easy-start/bot.sh,easy-start/bot.ps1,easy-start/tools/settings.py"

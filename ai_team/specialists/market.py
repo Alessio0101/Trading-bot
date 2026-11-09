@@ -76,7 +76,7 @@ EVENT_TAGS = {
     "security": ["hack", "exploit", "breach", "stolen"],
     "listing": ["listing", "lists", "delist"],
     "macro": ["fed", "rate", "inflation", "cpi", "recession"],
-    "adoption": ["partnership", "adopt", "integrat", "launch"],
+    "adoption": ["partnership", "adopt", "integration", "integrated", "launch"],
 }
 
 

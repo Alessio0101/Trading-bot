@@ -12,7 +12,7 @@ import json
 import time
 import urllib.parse
 import urllib.request
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
@@ -41,7 +41,7 @@ class KrakenPublicData:
 
     def __init__(self, timeout: float = 15.0) -> None:
         self.timeout = timeout
-        self._cache: dict[tuple, object] = {}
+        self._cache: dict[tuple, Any] = {}
 
     @staticmethod
     def _symbol(pair: str) -> str:
@@ -67,7 +67,7 @@ class KrakenPublicData:
             df["date"] = pd.to_datetime(df["time"], unit="s", utc=True)
             df = df.set_index("date")[["open", "high", "low", "close", "volume"]].astype(float)
             self._cache[key] = df
-        return self._cache[key].tail(limit)  # type: ignore[union-attr]
+        return self._cache[key].tail(limit)
 
     def order_book(self, pair: str, depth: int = 500) -> dict:
         key = ("book", pair)
@@ -77,7 +77,7 @@ class KrakenPublicData:
                 "bids": [(float(p), float(q)) for p, q, _ in book["bids"]],
                 "asks": [(float(p), float(q)) for p, q, _ in book["asks"]],
             }
-        return self._cache[key]  # type: ignore[return-value]
+        return self._cache[key]
 
     def trades(self, pair: str, limit: int = 500) -> pd.DataFrame:
         key = ("trades", pair)
@@ -89,7 +89,7 @@ class KrakenPublicData:
             )
             df["side"] = df["side"].map({"b": "buy", "s": "sell"})
             self._cache[key] = df
-        return self._cache[key].tail(limit)  # type: ignore[union-attr]
+        return self._cache[key].tail(limit)
 
 
 class SyntheticMarketData:

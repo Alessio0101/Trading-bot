@@ -13,6 +13,7 @@ honest capability level, re-checked by ``verify``:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 CATEGORIES = {
@@ -60,7 +61,8 @@ class Spec:
         return tools + list(self.github)
 
 
-def S(number, agent_id, name, category, mission, resp, inputs, outputs, handler, status, **kw) -> Spec:
+def S(number, agent_id, name, category, mission, resp, inputs, outputs, handler, status, **kw: Any) -> Spec:
+    extra: dict[str, Any] = {k: tuple(v) if isinstance(v, list) else v for k, v in kw.items()}
     return Spec(
         number,
         agent_id,
@@ -72,7 +74,7 @@ def S(number, agent_id, name, category, mission, resp, inputs, outputs, handler,
         tuple(outputs),
         handler,
         status,
-        **{k: tuple(v) if isinstance(v, list) else v for k, v in kw.items()},
+        **extra,
     )
 
 

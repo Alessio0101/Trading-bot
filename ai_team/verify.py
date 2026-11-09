@@ -19,6 +19,7 @@ import tempfile
 import threading
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
 
 from .bus import MessageBus
 from .coordinator import Coordinator
@@ -26,7 +27,7 @@ from .data import SyntheticMarketData
 from .gateway_client import GatewayClient
 from .generate_agents import AGENTS_DIR, REPO
 from .integrations import all_status
-from .specs import COORDINATOR_ID, SPECS, WORKFLOWS
+from .specs import COORDINATOR_ID, SPECS, WORKFLOWS, Spec
 from .state import DEFAULT_STATE_DIR, StateStore
 
 
@@ -65,13 +66,13 @@ def parse_frontmatter(text: str) -> dict:
 
 
 def check_files() -> dict:
-    results = {}
-    expected = {f"{s.number:02d}-{s.id}.md": s for s in SPECS}
+    results: dict[str, dict[str, Any]] = {}
+    expected: dict[str, Spec | None] = {f"{s.number:02d}-{s.id}.md": s for s in SPECS}
     expected[f"00-{COORDINATOR_ID}.md"] = None
     present = {p.name for p in AGENTS_DIR.glob("*.md")}
     names = []
     for fname, spec in expected.items():
-        r = {"exists": fname in present, "problems": []}
+        r: dict[str, Any] = {"exists": fname in present, "problems": []}
         if r["exists"]:
             text = (AGENTS_DIR / fname).read_text(encoding="utf-8")
             fm = parse_frontmatter(text)
@@ -230,7 +231,13 @@ def main() -> int:
         k: sum(1 for a in agents.values() if a["observed"] == k)
         for k in ("ok", "needs_integration", "error", "not_invoked")
     }
-    report = {"files": files, "settings": settings, "live": live, "integrations": integ, "counts": counts}
+    report: dict[str, Any] = {
+        "files": files,
+        "settings": settings,
+        "live": live,
+        "integrations": integ,
+        "counts": counts,
+    }
     all_ok = (
         files["count_present"] == 51
         and all(f["ok"] for f in files["files"].values())

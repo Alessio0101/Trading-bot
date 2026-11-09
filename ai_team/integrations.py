@@ -11,9 +11,10 @@ from __future__ import annotations
 import importlib
 import importlib.util
 from functools import cache
+from typing import Any
 
 
-FRAMEWORKS = {
+FRAMEWORKS: dict[str, dict[str, Any]] = {
     "tradingagents": {
         "name": "TradingAgents",
         "module": "tradingagents",

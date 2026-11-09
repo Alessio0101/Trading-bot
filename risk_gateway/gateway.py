@@ -15,6 +15,14 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 LIMITS_FILE = HERE / "limits.json"
 
+# The gateway reuses the team's read-only market data client; make the repo root
+# importable when the gateway is started from another directory.
+if str(HERE.parent) not in sys.path:
+    sys.path.insert(0, str(HERE.parent))
+
+from ai_team.data import KrakenPublicData, SyntheticMarketData  # noqa: E402
+
+
 ALLOWED_FIELDS = {
     "proposal_id",
     "pair",
@@ -41,14 +49,13 @@ class PriceSource:
     """The gateway prices orders itself; it never trusts the proposer's price."""
 
     def __init__(self, kind: str) -> None:
-        sys.path.insert(0, str(HERE.parent))
-        from ai_team.data import KrakenPublicData, SyntheticMarketData  # read-only market data
-
         self.kind = kind
-        self._src = KrakenPublicData() if kind == "kraken" else SyntheticMarketData()
+        self._src: KrakenPublicData | SyntheticMarketData = (
+            KrakenPublicData() if kind == "kraken" else SyntheticMarketData()
+        )
 
     def price(self, pair: str) -> float:
-        if self.kind == "kraken":
+        if isinstance(self._src, KrakenPublicData):
             self._src._cache.clear()  # always fresh
         return float(self._src.ohlcv(pair, "1m", 5)["close"].iloc[-1])
 
