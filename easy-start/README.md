@@ -52,7 +52,35 @@ La prima pornire scriptul îți afișează **utilizatorul** (`admin`) și
 În pagina web apasă **Login**, lasă adresa `http://127.0.0.1:8080` și
 introdu utilizatorul și parola.
 
-## 3. Ce poți face în platforma web
+## 3. De pe telefon 📱
+
+Botul **nu se instalează pe telefon**: rulează pe calculator (sau pe un
+server), iar telefonul doar îl controlează. Ai două variante:
+
+### Varianta A — platforma web pe telefon (același Wi-Fi)
+
+1. Pe calculator: dublu-click pe **`TELEFON.bat`** (Windows) sau
+   `./bot.sh telefon` (Mac/Linux).
+2. Scriptul îți arată o adresă de forma `http://192.168.x.x:8080`.
+3. Pe telefon, conectat la **același Wi-Fi**, deschide adresa în browser și
+   loghează-te cu `admin` și parola ta (la „API Url” pune aceeași adresă).
+
+Dacă pe Windows nu se încarcă, permite Docker în Windows Firewall pentru
+rețele private. Revii la „doar pe calculator” cu `local`.
+**Nu** deschide portul 8080 în router.
+
+### Varianta B — Telegram (de oriunde, și pe date mobile)
+
+1. Pe calculator: `telegram` (Windows: `.\bot.ps1 telegram`).
+2. Urmează pașii afișați: token de la [@BotFather](https://t.me/BotFather) și
+   chat ID de la [@userinfobot](https://t.me/userinfobot).
+3. Scrie `/help` botului tău în Telegram. Comenzi utile: `/status`,
+   `/profit`, `/balance`, `/daily`, `/start`, `/stop`.
+
+Primești și mesaj la fiecare cumpărare/vânzare. Calculatorul trebuie să fie
+pornit; pentru 24/7 folosește un server (VPS) sau un mini-PC/Raspberry Pi.
+
+## 4. Ce poți face în platforma web
 
 | Secțiune | Ce face |
 |----------|---------|
@@ -62,7 +90,7 @@ introdu utilizatorul și parola.
 | **Backtest** | Testezi strategia pe date din trecut, fără bani |
 | **Logs** | Ce face botul în timp real |
 
-## 4. Toate comenzile
+## 5. Toate comenzile
 
 Pe Windows folosește `.\bot.ps1 <comanda>` în PowerShell; pe Mac/Linux
 `./bot.sh <comanda>`.
@@ -80,8 +108,11 @@ Pe Windows folosește `.\bot.ps1 <comanda>` în PowerShell; pe Mac/Linux
 | `real` | Trece pe bani **reali** (cere să scrii `DA`) |
 | `demo` | Revine la bani virtuali |
 | `update` | Actualizează botul la ultima versiune |
+| `telefon` | Platforma web accesibilă de pe telefon (același Wi-Fi) |
+| `local` | Platforma doar pe acest calculator (implicit) |
+| `telegram` | Controlezi botul din Telegram, de oriunde |
 
-## 5. Strategia inclusă: `StrategieUsoara`
+## 6. Strategia inclusă: `StrategieUsoara`
 
 O strategie simplă, care urmează trendul, pe grafic de 15 minute:
 
@@ -94,7 +125,7 @@ O strategie simplă, care urmează trendul, pe grafic de 15 minute:
 Fișierul este în `user_data/strategies/StrategieUsoara.py` — numerele de sus
 pot fi modificate ușor.
 
-## 6. Setări simple
+## 7. Setări simple
 
 Setările sunt în `user_data/bot_settings.json` (creat la prima pornire).
 Cele mai utile:
@@ -108,7 +139,7 @@ Cele mai utile:
 
 După orice modificare: `restart`.
 
-## 7. Trecerea pe bani reali (doar când ești sigur)
+## 8. Trecerea pe bani reali (doar când ești sigur)
 
 1. Pe exchange (ex. Binance) creează o **cheie API** cu drept de
    **trading spot**. **Nu** activa dreptul de retragere (withdraw).
@@ -119,26 +150,24 @@ După orice modificare: `restart`.
 
 Revii oricând la bani virtuali cu `demo`.
 
-## 8. Notificări pe telefon (opțional)
+## 9. Notificări pe telefon
 
-Botul poate trimite mesaje pe **Telegram** la fiecare tranzacție. Creează un
-bot cu [@BotFather](https://t.me/BotFather), apoi completează în
-`bot_settings.json` secțiunea `telegram` (`enabled: true`, `token`,
-`chat_id`) și dă `restart`. Detalii:
-<https://www.freqtrade.io/en/stable/telegram-usage/>
+Vezi secțiunea 3, varianta B (Telegram).
 
-## 9. Securitate
+## 10. Securitate
 
-- Platforma web este accesibilă **doar de pe calculatorul tău**
-  (`127.0.0.1`).
+- Implicit, platforma web este accesibilă **doar de pe calculatorul tău**
+  (`127.0.0.1`); cu `telefon` devine accesibilă în rețeaua ta Wi-Fi, protejată
+  de parolă.
 - Parola, cheile API și baza de date nu sunt urcate pe GitHub
   (vezi `.gitignore`). Nu trimite nimănui fișierul `bot_settings.json`.
 
-## 10. Probleme frecvente
+## 11. Probleme frecvente
 
 | Problemă | Soluție |
 |----------|---------|
 | „Docker nu rulează” | Pornește Docker Desktop și așteaptă să fie verde |
 | Pagina nu se deschide | Așteaptă ~30 secunde după `start`, apoi `loguri` |
 | „Could not load markets” | Exchange-ul nu e accesibil din țara/rețeaua ta — schimbă `exchange.name` (ex. `kraken`, `bybit`, `okx`) |
+| Pe telefon nu se încarcă | Telefonul trebuie să fie pe același Wi-Fi; rulează `telefon`, nu `start`; verifică firewall-ul; sau folosește Telegram |
 | Pe Windows scriptul nu pornește | Folosește `START.bat`, care permite rularea scriptului |

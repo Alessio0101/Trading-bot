@@ -61,6 +61,9 @@ Utilizare: ./bot.sh <comanda>
   real       Trece pe bani REALI (cere confirmare)
   demo       Revine la bani virtuali
   update     Descarca ultima versiune a botului
+  telefon    Deschide platforma pe telefon (aceeasi retea Wi-Fi)
+  local      Platforma doar pe acest calculator (implicit)
+  telegram   Controleaza botul din Telegram, de oriunde
 USAGE
 }
 
@@ -123,6 +126,30 @@ case "$cmd" in
         need_docker
         ensure_settings
         settings demo
+        docker compose restart 2>/dev/null || true
+        ;;
+    telefon|phone)
+        need_docker
+        ensure_settings
+        echo "BIND_IP=0.0.0.0" > .env
+        prepare_dirs
+        docker compose up -d
+        ip="$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')"
+        echo
+        echo "Pe telefon (conectat la ACELASI Wi-Fi) deschide: http://${ip:-IP-ul-calculatorului}:8080"
+        echo "Nu deschide portul 8080 in router - platforma trebuie sa ramana doar in reteaua ta."
+        settings login
+        ;;
+    local)
+        need_docker
+        rm -f .env
+        docker compose up -d
+        echo "Platforma este din nou doar pe acest calculator: $URL"
+        ;;
+    telegram)
+        need_docker
+        ensure_settings
+        settings telegram
         docker compose restart 2>/dev/null || true
         ;;
     update)

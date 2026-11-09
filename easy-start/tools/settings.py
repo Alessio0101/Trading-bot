@@ -86,6 +86,20 @@ def set_mode(live: bool) -> None:
     print("Mod setat: " + ("REAL" if live else "DEMO (bani virtuali)"))
 
 
+def set_telegram() -> None:
+    cfg = load()
+    print("1. In Telegram scrie-i lui @BotFather comanda /newbot si copiaza token-ul.")
+    print("2. Scrie-i lui @userinfobot ca sa afli chat_id-ul tau.")
+    token = getpass.getpass("Token (nu se afiseaza): ").strip()
+    chat_id = input("Chat ID: ").strip()
+    if not token or not chat_id:
+        print("Telegram nu a fost activat (camp gol).")
+        return
+    cfg["telegram"].update({"enabled": True, "token": token, "chat_id": chat_id})
+    save(cfg)
+    print("Telegram activat. Dupa restart, scrie /help botului tau din Telegram.")
+
+
 def status() -> None:
     cfg = load()
     print("Mod:       " + ("DEMO (bani virtuali)" if cfg["dry_run"] else "REAL"))
@@ -101,6 +115,7 @@ COMMANDS = {
     "live": lambda: set_mode(True),
     "demo": lambda: set_mode(False),
     "status": status,
+    "telegram": set_telegram,
 }
 
 

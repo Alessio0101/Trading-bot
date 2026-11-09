@@ -20,7 +20,7 @@ function Need-Docker {
 
 function Run-Settings([string]$What) {
     New-Item -ItemType Directory -Force -Path user_data/logs, user_data/data, user_data/backtest_results | Out-Null
-    if ($What -in "keys", "live", "demo") {
+    if ($What -in "keys", "live", "demo", "telegram") {
         docker compose run --rm -it --entrypoint python bot /easy-tools/settings.py $What
     } else {
         docker compose run --rm --entrypoint python bot /easy-tools/settings.py $What
@@ -46,6 +46,9 @@ Utilizare: .\bot.ps1 <comanda>
   real       Trece pe bani REALI (cere confirmare)
   demo       Revine la bani virtuali
   update     Descarca ultima versiune a botului
+  telefon    Deschide platforma pe telefon (aceeasi retea Wi-Fi)
+  local      Platforma doar pe acest calculator (implicit)
+  telegram   Controleaza botul din Telegram, de oriunde
 "@
 }
 
@@ -76,6 +79,25 @@ switch ($Comanda.ToLower()) {
     }
     { $_ -in "real", "live" } { Need-Docker; Ensure-Settings; Run-Settings "live"; docker compose restart }
     "demo"   { Need-Docker; Ensure-Settings; Run-Settings "demo"; docker compose restart }
+    { $_ -in "telefon", "phone" } {
+        Need-Docker; Ensure-Settings
+        Set-Content -Path .env -Value "BIND_IP=0.0.0.0" -Encoding ascii
+        docker compose up -d
+        $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" -and $_.PrefixOrigin -ne "WellKnown" } |
+            Select-Object -First 1).IPAddress
+        Write-Host "`nPe telefon (conectat la ACELASI Wi-Fi) deschide: http://${ip}:8080"
+        Write-Host "Daca nu merge, permite Docker in Windows Firewall (retea privata)."
+        Write-Host "Nu deschide portul 8080 in router - platforma trebuie sa ramana doar in reteaua ta."
+        Run-Settings "login"
+    }
+    "local" {
+        Need-Docker
+        Remove-Item -Force -ErrorAction SilentlyContinue .env
+        docker compose up -d
+        Write-Host "Platforma este din nou doar pe acest calculator: $Url"
+    }
+    "telegram" { Need-Docker; Ensure-Settings; Run-Settings "telegram"; docker compose restart }
     "update" { Need-Docker; docker compose pull; docker compose up -d }
     default  { Show-Usage }
 }

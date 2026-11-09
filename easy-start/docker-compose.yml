@@ -9,9 +9,10 @@ services:
     volumes:
       - "./user_data:/freqtrade/user_data"
       - "./tools:/easy-tools:ro"
-    # The web platform is only reachable from this computer (localhost).
+    # By default the web platform is only reachable from this computer.
+    # "bot telefon" sets BIND_IP=0.0.0.0 in .env so phones on the same Wi-Fi can connect.
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${BIND_IP:-127.0.0.1}:8080:8080"
     command: >
       trade
       --logfile /freqtrade/user_data/logs/bot.log
