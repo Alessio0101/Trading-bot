@@ -219,3 +219,22 @@ def test_quantitative_researcher_ranks_by_evidence(market):
     assert ics == sorted(ics, reverse=True)
     assert set(m["candidate_strategies"]) == set(STRATEGY_HYPOTHESIS)
     assert m["supported_strategies"] == [r["strategy"] for r in m["ranking"] if r["ic"] > 0]
+
+
+def test_dashboard_state_reports_unreachable_gateway(tmp_path):
+    """While the gateway is down the dashboard must say so instead of inventing a mode."""
+    from ai_team.dashboard.server import collect
+
+    state = collect(tmp_path, GatewayClient("http://127.0.0.1:9", timeout=1))
+    assert state["gateway"]["ok"] is False
+    assert "mode" not in state["gateway"]
+    assert len(state["agents"]) == 50
+    assert state["portfolio"] is None
+
+
+def test_dashboard_state_with_gateway(tmp_path, gateway_url):
+    from ai_team.dashboard.server import collect
+
+    state = collect(tmp_path, GatewayClient(gateway_url))
+    assert state["gateway"]["mode"] == "paper" and state["gateway"]["live_trading"] is False
+    assert state["portfolio"]["equity"] == pytest.approx(10000.0)

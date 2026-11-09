@@ -78,20 +78,4 @@ jobs:
         run: |
           python -m risk_gateway.server --port 8790 --data synthetic &
           python -m ai_team.dashboard.server --port 8800 &
-          python - <<'PY'
-          import json, time, urllib.request
-          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-          for _ in range(30):
-              try:
-                  state = json.load(opener.open("http://127.0.0.1:8800/api/state", timeout=5))
-                  break
-              except OSError:
-                  time.sleep(1)
-          else:
-              raise SystemExit("dashboard did not start")
-          assert len(state["agents"]) == 50, len(state["agents"])
-          assert state["gateway"]["mode"] == "paper" and state["gateway"]["live_trading"] is False
-          html = opener.open("http://127.0.0.1:8800/", timeout=5).read().decode()
-          assert "AI Trading Team" in html
-          print("dashboard OK:", len(state["agents"]), "agents, gateway", state["gateway"]["mode"])
-          PY
+          python -m ai_team.dashboard.smoke --timeout 60
