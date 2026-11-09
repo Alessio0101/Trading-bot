@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -66,8 +68,16 @@ def make_handler(gw: RiskGateway):
     return Handler
 
 
-def serve(port: int, data: str, state_dir: Path) -> ThreadingHTTPServer:
+def serve(port: int, data: str, state_dir: Path, exit_check_interval: float = 0) -> ThreadingHTTPServer:
     gw = RiskGateway(state_dir, PriceSource(data))
+    if exit_check_interval > 0:
+
+        def monitor() -> None:
+            while True:
+                gw.check_exits()
+                time.sleep(exit_check_interval)
+
+        threading.Thread(target=monitor, name="protective-exits", daemon=True).start()
     return ThreadingHTTPServer(("127.0.0.1", port), make_handler(gw))
 
 
@@ -76,8 +86,14 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8790)
     ap.add_argument("--data", choices=["kraken", "synthetic"], default="kraken")
     ap.add_argument("--state-dir", type=Path, default=HERE / "state")
+    ap.add_argument(
+        "--exit-check-interval",
+        type=float,
+        default=15.0,
+        help="seconds between stop-loss/take-profit checks (0 disables)",
+    )
     a = ap.parse_args()
-    srv = serve(a.port, a.data, a.state_dir)
+    srv = serve(a.port, a.data, a.state_dir, a.exit_check_interval)
     print(f"risk gateway (paper only) on http://127.0.0.1:{a.port} data={a.data}", flush=True)
     srv.serve_forever()
 

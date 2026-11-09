@@ -3,123 +3,517 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Trading Team</title>
+<title>AI Trading Desk</title>
 <style>
-:root{--bg:#f6f7f9;--panel:#fff;--ink:#14171c;--muted:#5d6673;--line:#e3e6eb;--ok:#15803d;--ok-bg:#e7f6ec;
---warn:#a16207;--warn-bg:#fdf4dc;--bad:#b91c1c;--bad-bg:#fde8e8;--info:#1d4ed8;--info-bg:#e6edfd;--off:#6b7280;--off-bg:#eef0f3}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1216;--panel:#171b21;--ink:#e7eaee;--muted:#9aa3ae;--line:#272d36;
---ok:#4ade80;--ok-bg:#15301f;--warn:#facc15;--warn-bg:#352c0c;--bad:#f87171;--bad-bg:#3a1717;--info:#93b4fd;--info-bg:#18264a;--off:#9aa3ae;--off-bg:#232830}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{padding:20px 16px 8px;max-width:1400px;margin:auto}h1{margin:0;font-size:22px}header p{margin:4px 0 0;color:var(--muted)}
-main{max-width:1400px;margin:auto;padding:8px 16px 40px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
-.panel,.card{min-width:0}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
-.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
-.card b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.card span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-.panel h2{margin:0 0 10px;font-size:15px}
-.badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+:root{
+  --bg:#f4f6f9;--panel:#ffffff;--panel2:#f8fafc;--ink:#111827;--muted:#5b6575;--line:#e2e6ec;
+  --accent:#2563eb;--ok:#15803d;--ok-bg:#e6f6ec;--warn:#a16207;--warn-bg:#fdf3d7;--bad:#b91c1c;--bad-bg:#fde7e7;
+  --info:#1d4ed8;--info-bg:#e5edfd;--off:#6b7280;--off-bg:#eef0f3;--buy:#15803d;--sell:#b91c1c;--hold:#64748b;
+  --shadow:0 1px 2px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1016;--panel:#141a22;--panel2:#10151c;--ink:#e6eaf0;--muted:#97a1ae;--line:#242c37;--accent:#7aa2ff;
+  --ok:#4ade80;--ok-bg:#12301f;--warn:#facc15;--warn-bg:#352b0b;--bad:#f87171;--bad-bg:#3b1616;--info:#93b4fd;--info-bg:#17254a;
+  --off:#9aa3ae;--off-bg:#222934;--buy:#4ade80;--sell:#f87171;--hold:#94a3b8;--shadow:none}}
+:root[data-theme="dark"]{
+  --bg:#0c1016;--panel:#141a22;--panel2:#10151c;--ink:#e6eaf0;--muted:#97a1ae;--line:#242c37;--accent:#7aa2ff;
+  --ok:#4ade80;--ok-bg:#12301f;--warn:#facc15;--warn-bg:#352b0b;--bad:#f87171;--bad-bg:#3b1616;--info:#93b4fd;--info-bg:#17254a;
+  --off:#9aa3ae;--off-bg:#222934;--buy:#4ade80;--sell:#f87171;--hold:#94a3b8;--shadow:none}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+.top{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line)}
+.bar{max-width:1500px;margin:auto;padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.brand{font-weight:700;font-size:17px;margin-right:auto;display:flex;gap:10px;align-items:center}
+.paper{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:700;letter-spacing:.04em}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--panel2);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--off)}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
+.dot.live{animation:pulse 1.6s infinite}@keyframes pulse{50%{opacity:.35}}
+.themebtn{border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:8px;padding:3px 9px;cursor:pointer;font:inherit;font-size:12px}
+nav.tabs{max-width:1500px;margin:auto;padding:0 12px;display:flex;gap:2px;overflow-x:auto;scrollbar-width:thin}
+nav.tabs button{border:0;background:none;color:var(--muted);font:inherit;font-weight:600;padding:9px 12px;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}
+nav.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+nav.tabs .count{font-size:11px;background:var(--off-bg);color:var(--muted);border-radius:99px;padding:0 6px;margin-left:4px}
+main{max-width:1500px;margin:auto;padding:16px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+section.tab{display:none;gap:16px;grid-template-columns:minmax(0,1fr)}section.tab.active{display:grid}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))}
+.cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);min-width:0}
+.card{padding:12px 14px}.card .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.card .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .s{font-size:12px;color:var(--muted);margin-top:2px}
+.panel{padding:14px 16px}.panel h2{margin:0 0 10px;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h2 .sub{font-weight:400;font-size:12px;color:var(--muted)}
+.scroll{overflow-x:auto}.tall{max-height:520px;overflow:auto}
+table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;background:var(--panel);z-index:1}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.clickable{cursor:pointer}tr.clickable:hover td{background:var(--panel2)}
+.b{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
 .ok{color:var(--ok);background:var(--ok-bg)}.warn{color:var(--warn);background:var(--warn-bg)}.bad{color:var(--bad);background:var(--bad-bg)}
 .info{color:var(--info);background:var(--info-bg)}.off{color:var(--off);background:var(--off-bg)}
-.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1100px}
-th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
-td.num{font-variant-numeric:tabular-nums;white-space:nowrap}.muted{color:var(--muted)}.small{font-size:12px}
-.cat td{background:var(--bg);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
-.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.filters button{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:4px 12px;cursor:pointer;font:inherit;font-size:13px}
+.sig{display:inline-block;min-width:44px;text-align:center;padding:2px 6px;border-radius:6px;font-size:11.5px;font-weight:800;letter-spacing:.03em}
+.sig.BUY{background:var(--ok-bg);color:var(--buy)}.sig.SELL{background:var(--bad-bg);color:var(--sell)}
+.sig.HOLD{background:var(--off-bg);color:var(--hold)}.sig.NA{background:transparent;color:var(--muted);border:1px dashed var(--line)}
+.up{color:var(--ok)}.down{color:var(--bad)}.muted{color:var(--muted)}.small{font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.empty{padding:18px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:10px;background:var(--panel2)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.filters button,.filters select,.filters input{border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:8px;padding:5px 10px;font:inherit;font-size:13px}
 .filters button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
-.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr));gap:16px}
-ul.log{list-style:none;margin:0;padding:0;max-height:420px;overflow:auto}ul.log li{padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
-code{font-size:12px}
+.filters input{min-width:180px}
+ul.list{list-style:none;margin:0;padding:0}ul.list li{padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.alert{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:8px;margin-bottom:6px;font-size:13px}
+.alert.critical,.alert.error{background:var(--bad-bg);color:var(--bad)}.alert.warning{background:var(--warn-bg);color:var(--warn)}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0 12px}
+.node{padding:4px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);font-size:12px}
+.arrow{font-size:12px;color:var(--muted)}.arrow b{color:var(--ink)}
+.meter{height:8px;border-radius:99px;background:var(--off-bg);overflow:hidden;margin-top:4px}.meter>i{display:block;height:100%;background:var(--accent)}
+.meter.warnm>i{background:var(--warn)}.meter.badm>i{background:var(--bad)}
+pre.log{margin:0;max-height:480px;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.drawer{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;z-index:20}
+.drawer.open{display:block}.drawer .sheet{position:absolute;right:0;top:0;bottom:0;width:min(640px,100%);background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:16px}
+.drawer .close{float:right;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;font-size:13px}.kv dt{color:var(--muted)}.kv dd{margin:0;word-break:break-word}
+svg.spark{display:block}
+@media (max-width:640px){.card .v{font-size:19px}.bar{padding:8px 12px}main{padding:12px}}
 </style>
 </head>
 <body>
-<header>
-  <h1>AI Trading Team</h1>
-  <p>50 specialists + coordinator · <strong>paper trading only</strong> · every proposal passes the independent risk gateway · <span id="updated" class="muted"></span></p>
-</header>
+<div class="top">
+  <div class="bar">
+    <div class="brand">AI Trading Desk <span class="paper" title="Paper trading only: no real orders can be placed">PAPER ONLY</span></div>
+    <div class="pills" id="pills"></div>
+    <button class="themebtn" id="themebtn" type="button">Theme</button>
+  </div>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+</div>
 <main>
-  <section class="cards" id="cards"></section>
-  <section class="panel">
-    <h2>Specialists</h2>
-    <div class="filters" id="filters"></div>
-    <div class="scroll"><table>
-      <thead><tr><th>#</th><th>Agent</th><th>Online</th><th>Capability</th><th>Current task</th><th>Latest analysis</th>
-      <th>Signals proposed</th><th>Errors</th><th>Performance</th><th>Risk approvals</th></tr></thead>
-      <tbody id="agents"></tbody>
-    </table></div>
+  <section class="tab" id="tab-overview">
+    <div class="cards" id="kpis"></div>
+    <div class="grid">
+      <div class="panel"><h2>Alerts</h2><div id="ov-alerts"></div></div>
+      <div class="panel"><h2>Consensus signals <span class="sub">signal-aggregation-specialist, per pair</span></h2><div class="scroll" id="ov-consensus"></div></div>
+    </div>
+    <div class="grid">
+      <div class="panel"><h2>Kraken market <span class="sub" id="ov-market-age"></span></h2><div class="scroll" id="ov-market"></div></div>
+      <div class="panel"><h2>Latest coordinator decisions</h2><div id="ov-decisions"></div></div>
+    </div>
   </section>
-  <section class="grid2">
-    <div class="panel"><h2>Risk gateway &amp; paper portfolio</h2><div id="gateway"></div></div>
-    <div class="panel"><h2>Integrations</h2><div id="integrations"></div></div>
+
+  <section class="tab" id="tab-agents">
+    <div class="panel">
+      <h2>All 50 specialists <span class="sub" id="ag-summary"></span></h2>
+      <div class="filters" id="ag-filters"></div>
+      <div class="scroll tall"><table>
+        <thead><tr><th class="n">#</th><th>Agent</th><th>Status</th><th>Capability</th><th>Current task</th><th>Latest analysis</th><th>Signals</th><th>Errors</th><th class="n">Runs</th><th class="n">OK %</th><th class="n">Avg ms</th></tr></thead>
+        <tbody id="ag-rows"></tbody></table></div>
+    </div>
   </section>
-  <section class="panel"><h2>Decision log (latest first)</h2><ul class="log" id="decisions"></ul></section>
+
+  <section class="tab" id="tab-signals">
+    <div class="panel"><h2>BUY / SELL / HOLD board <span class="sub">latest view of every strategy agent for every pair</span></h2>
+      <div class="scroll" id="sig-board"></div>
+      <p class="small muted">N/A = the agent could not produce a view (missing integration or input). Signals are proposals only; the coordinator and the independent risk gateway decide what is paper traded.</p>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-market">
+    <div class="panel"><h2>Kraken live market <span class="sub" id="mk-status"></span></h2><div class="scroll" id="mk-table"></div></div>
+  </section>
+
+  <section class="tab" id="tab-portfolio">
+    <div class="cards" id="pf-kpis"></div>
+    <div class="panel"><h2>Paper equity curve <span class="sub">marked by the risk gateway</span></h2><div id="pf-curve"></div></div>
+    <div class="panel"><h2>Open paper positions</h2><div class="scroll" id="pf-positions"></div></div>
+    <div class="grid">
+      <div class="panel"><h2>Trade history <span class="sub">paper fills</span></h2><div class="scroll tall" id="pf-fills"></div></div>
+      <div class="panel"><h2>Closed trades</h2><div class="scroll tall" id="pf-realised"></div></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-risk">
+    <div class="cards" id="rk-kpis"></div>
+    <div class="grid">
+      <div class="panel"><h2>Gateway status</h2><div id="rk-health"></div></div>
+      <div class="panel"><h2>Limits &amp; exposure <span class="sub">read-only, enforced by the gateway</span></h2><div id="rk-limits"></div></div>
+    </div>
+    <div class="panel"><h2>Risk checks: every gateway decision</h2><div class="scroll tall" id="rk-decisions"></div></div>
+    <div class="panel"><h2>Blocked trades</h2><div class="scroll tall" id="rk-blocked"></div></div>
+  </section>
+
+  <section class="tab" id="tab-coordinator">
+    <div class="panel"><h2>Agent collaboration workflows <span class="sub">hand-offs observed on the message bus</span></h2><div id="co-flows"></div></div>
+    <div class="grid">
+      <div class="panel"><h2>Coordinator decisions</h2><div class="tall" id="co-decisions"></div></div>
+      <div class="panel"><h2>Recent hand-offs</h2><div class="tall" id="co-handoffs"></div></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-performance">
+    <div class="cards" id="pe-kpis"></div>
+    <div class="panel"><h2>Strategy review <span class="sub">latest independent backtest per pair (incl. out-of-sample)</span></h2><div class="scroll" id="pe-strategies"></div></div>
+    <div class="panel"><h2>Agent performance</h2><div class="scroll tall" id="pe-agents"></div></div>
+  </section>
+
+  <section class="tab" id="tab-health">
+    <div class="grid">
+      <div class="panel"><h2>System health</h2><div id="he-runner"></div></div>
+      <div class="panel"><h2>Alerts</h2><div id="he-alerts"></div></div>
+    </div>
+    <div class="grid">
+      <div class="panel"><h2>Integrations</h2><div id="he-integrations"></div></div>
+      <div class="panel"><h2>Errors by agent</h2><div id="he-errors"></div></div>
+    </div>
+    <div class="panel"><h2>Runner log <span class="sub">last 150 lines</span></h2><pre class="log" id="he-logs"></pre></div>
+  </section>
 </main>
+
+<div class="drawer" id="drawer" aria-hidden="true"><div class="sheet" id="drawer-body"></div></div>
+
 <script>
-const $=s=>document.querySelector(s);
-const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let filter="all", last=null;
-const capBadge={functional:"ok",partial:"warn",needs_integration:"off"};
-function statusBadge(a){
-  if(a.status==="running") return '<span class="badge info">running</span>';
-  if(a.status==="error") return '<span class="badge bad">error</span>';
-  if(!a.online) return '<span class="badge off">offline</span>';
-  return '<span class="badge ok">online</span>';
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = (v, d=2) => v==null || isNaN(v) ? "–" : Number(v).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+const px = v => v==null ? "–" : (Math.abs(v) >= 100 ? num(v,2) : Math.abs(v) >= 1 ? num(v,4) : num(v,6));
+const pct = (v, d=2) => v==null || isNaN(v) ? "–" : (v>0?"+":"") + num(v,d) + "%";
+const cls = v => v>0 ? "up" : v<0 ? "down" : "";
+const ago = s => s==null ? "–" : s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s/60)}m ago` : `${(s/3600).toFixed(1)}h ago`;
+const since = ts => ts ? ago((Date.now() - Date.parse(ts))/1000) : "–";
+const time = ts => ts ? new Date(ts).toLocaleTimeString() : "–";
+const until = ts => { const s = (Date.parse(ts) - Date.now())/1000; return s <= 0 ? "due" : s < 60 ? `in ${Math.round(s)}s` : `in ${Math.floor(s/60)}m ${Math.round(s%60)}s`; };
+const empty = msg => `<div class="empty">${esc(msg)}</div>`;
+const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+
+const TABS = [["overview","Overview"],["agents","Agents"],["signals","Signals"],["market","Market"],["portfolio","Portfolio & Trades"],
+  ["risk","Risk Gateway"],["coordinator","Coordinator"],["performance","Performance"],["health","Logs & Health"]];
+let current = store.get("tab") || "overview", S = null, agentFilter = "all", agentStatus = "all", agentSearch = "";
+let conn = {mode:"connecting", last:null};
+
+function renderTabs(){
+  $("#tabs").innerHTML = TABS.map(([id,label]) => {
+    let c = "";
+    if (S && id==="agents") c = `<span class="count">${S.agents.filter(isOnline).length}/50</span>`;
+    if (S && id==="health" && S.alerts.length) c = `<span class="count">${S.alerts.length}</span>`;
+    return `<button role="tab" aria-selected="${id===current}" data-t="${id}">${label}${c}</button>`;
+  }).join("");
+  document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {current=b.dataset.t; store.set("tab",current); show()});
 }
-function render(d){
-  last=d;
-  const ag=d.agents, on=ag.filter(a=>a.online&&a.status!=="error").length;
-  const sig=ag.reduce((n,a)=>n+(a.signals?.length||0),0), err=ag.filter(a=>a.status==="error").length;
-  const appr=ag.reduce((n,a)=>n+a.risk.approved,0), rej=ag.reduce((n,a)=>n+a.risk.rejected,0);
-  const pf=d.portfolio, gw=d.gateway;
-  $("#cards").innerHTML=[
-    ["Online",`${on}/50`],["Needs integration",ag.filter(a=>a.capability==="needs_integration").length],
-    ["Errors",err],["Signals (latest)",sig],["Gateway",gw.ok?(gw.mode==="paper"?"paper ✓":"?"):"DOWN"],
-    ["Approved / rejected",`${appr} / ${rej}`],["Paper equity",pf?pf.equity.toFixed(2):"–"],
-    ["Verification",d.verification?(d.verification.passed?"PASS":"FAIL"):"not run"]
-  ].map(([k,v])=>`<div class="card"><span>${k}</span><b>${esc(v)}</b></div>`).join("");
-  const cats=["all",...d.categories];
-  $("#filters").innerHTML=cats.map(c=>`<button aria-pressed="${c===filter}" data-c="${esc(c)}">${c==="all"?"All 50":esc(c)}</button>`).join("");
-  document.querySelectorAll("#filters button").forEach(b=>b.onclick=()=>{filter=b.dataset.c;render(last)});
-  let rows="",cur=null;
-  for(const a of ag){
-    if(filter!=="all"&&a.category!==filter) continue;
-    if(a.category!==cur){cur=a.category;rows+=`<tr class="cat"><td colspan="10">${esc(cur)}</td></tr>`}
-    const p=a.performance, r=a.risk;
-    const sigs=(a.signals||[]).map(s=>`${esc(s.side)} ${esc(s.pair)} <span class="muted">(${(+s.confidence).toFixed(2)})</span>`).join("<br>")||'<span class="muted">–</span>';
-    const errs=(a.errors||[]).slice(-2).map(e=>`<span class="badge bad">${esc(e.error).slice(0,80)}</span>`).join("<br>")||'<span class="muted">–</span>';
-    rows+=`<tr><td class="num">${a.number}</td><td><strong>${esc(a.name)}</strong><br><code class="muted">${esc(a.id)}</code></td>
-      <td>${statusBadge(a)}</td><td><span class="badge ${capBadge[a.capability]}">${esc(a.capability.replace("_"," "))}</span>${a.gap?`<div class="small muted">${esc(a.gap)}</div>`:""}</td>
-      <td class="small">${esc(a.current_task)||'<span class="muted">idle</span>'}</td>
-      <td class="small">${esc(a.latest_analysis)||'<span class="muted">not run yet</span>'}</td>
-      <td class="small">${sigs}</td><td class="small">${errs}</td>
-      <td class="num small">${p.runs} runs<br>${p.runs?Math.round((p.success_rate||0)*100)+"% ok":""} · ${p.avg_ms} ms</td>
-      <td class="small">${r.submitted?`<span class="badge ok">${r.approved} ✓</span> <span class="badge bad">${r.rejected} ✗</span><div class="muted">${esc(r.last).slice(0,90)}</div>`:'<span class="muted">none submitted</span>'}</td></tr>`;
-  }
-  $("#agents").innerHTML=rows;
-  let g=`<p>${gw.ok?'<span class="badge ok">reachable</span>':'<span class="badge bad">unreachable – proposals fail closed</span>'}
-    mode <strong>${esc(gw.mode||"?")}</strong> · live trading <strong>${gw.live_trading===false?"disabled":"?"}</strong>
-    · prices ${esc(gw.price_source||"?")}</p>`;
-  if(pf){
-    g+=`<p class="num">Equity ${pf.equity.toFixed(2)} · cash ${pf.cash.toFixed(2)} · exposure ${pf.exposure.toFixed(2)} ·
-      today ${(pf.daily_pnl_pct*100).toFixed(2)}% · drawdown ${(pf.drawdown_pct*100).toFixed(2)}%</p>`;
-    const pos=Object.entries(pf.positions||{});
-    g+=pos.length?`<table style="min-width:0"><tr><th>Pair</th><th>Strategy</th><th>Entry</th><th>Stop</th><th>P&amp;L</th></tr>${pos.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v.strategy)}</td><td class="num">${(+v.entry_price).toPrecision(6)}</td><td class="num">${v.stop_loss?(+v.stop_loss).toPrecision(6):"–"}</td><td class="num">${(pf.unrealised?.[k]?.pnl??0).toFixed(2)}</td></tr>`).join("")}</table>`:'<p class="muted">No open paper positions.</p>';
-  }
-  $("#gateway").innerHTML=g;
-  $("#integrations").innerHTML="<ul class='log'>"+d.integrations.map(i=>`<li><span class="badge ${i.installed?"ok":"off"}">${i.installed?"installed":"not installed"}</span> <strong>${esc(i.name)}</strong> <span class="muted small">→ ${i.used_by.length} agent(s)</span></li>`).join("")+"</ul>";
-  $("#decisions").innerHTML=d.decisions.map(x=>{
-    let detail="";
-    if(x.type==="gateway_submission") detail=`${esc(x.side)} ${esc(x.pair)} (${esc(x.strategy)}) → <span class="badge ${x.gateway?.approved?"ok":"bad"}">${x.gateway?.approved?"APPROVED":"REJECTED"}</span> ${esc((x.gateway?.reasons||[]).join("; "))}`;
-    else if(x.type==="proposal_withheld") detail=`${esc(x.side)} ${esc(x.pair)} (${esc(x.strategy)}) withheld: ${esc((x.reasons||[]).join("; "))}`;
-    else if(x.type==="strategy_review") detail=`${esc(x.pair)}: `+Object.entries(x.verdicts||{}).map(([k,v])=>`${esc(k)} <span class="badge ${v.verdict==="APPROVE"?"ok":"bad"}">${v.verdict}</span>`).join(" ");
-    else if(x.type==="compare_findings") detail=`${esc(x.pair)} conflict=${x.conflict} views=${esc(JSON.stringify(x.signal_views))}`;
-    else detail=esc(x.pair||x.workflow||x.cycle_id||"");
-    return `<li><span class="muted small">${esc(x.ts)}</span> <strong>${esc(x.type)}</strong> ${detail}</li>`}).join("")||'<li class="muted">No decisions yet.</li>';
-  $("#updated").textContent="updated "+new Date().toLocaleTimeString();
+function show(){
+  document.querySelectorAll("section.tab").forEach(s => s.classList.toggle("active", s.id==="tab-"+current));
+  renderTabs();
 }
-async function tick(){try{render(await (await fetch("api/state",{cache:"no-store"})).json())}catch(e){$("#updated").textContent="dashboard API unreachable"}}
-tick();setInterval(tick,5000);
+
+const isOnline = a => a.online && a.status !== "error";
+function agentBadge(a){
+  if (a.status==="running") return '<span class="b info">running</span>';
+  if (a.status==="error") return '<span class="b bad">error</span>';
+  if (!a.performance.runs) return '<span class="b off">not started</span>';
+  if (!a.online) return '<span class="b off">offline</span>';
+  return a.capability==="partial" ? '<span class="b warn">partial</span>' : '<span class="b ok">online</span>';
+}
+const capBadge = c => `<span class="b ${{functional:"ok",partial:"warn",needs_integration:"off"}[c]}">${esc(c.replace("_"," "))}</span>`;
+const sig = a => `<span class="sig ${a==="N/A"?"NA":esc(a)}">${esc(a)}</span>`;
+
+function spark(points, w=140, h=34){
+  const vals = (points||[]).map(p => +p[1]).filter(v => !isNaN(v));
+  if (vals.length < 2) return '<span class="muted small">collecting…</span>';
+  const mn = Math.min(...vals), mx = Math.max(...vals), r = (mx-mn) || 1;
+  const d = vals.map((v,i) => `${(i/(vals.length-1)*w).toFixed(1)},${(h-2-(v-mn)/r*(h-4)).toFixed(1)}`).join(" ");
+  const col = vals[vals.length-1] >= vals[0] ? "var(--ok)" : "var(--bad)";
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="price trend"><polyline fill="none" stroke="${col}" stroke-width="1.6" points="${d}"/></svg>`;
+}
+function curve(points){
+  const vals = (points||[]).map(p => +p.equity);
+  if (vals.length < 2) return empty("Equity curve appears after the gateway records at least two marks.");
+  const W = 900, H = 220, mn = Math.min(...vals), mx = Math.max(...vals), pad = (mx-mn)*0.1 || mx*0.001 || 1;
+  const lo = mn-pad, hi = mx+pad;
+  const d = vals.map((v,i) => `${(i/(vals.length-1)*W).toFixed(1)},${(H-(v-lo)/(hi-lo)*H).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${W} ${H+18}" width="100%" height="240" preserveAspectRatio="none" role="img" aria-label="equity curve">
+    <line x1="0" x2="${W}" y1="${H-(vals[0]-lo)/(hi-lo)*H}" y2="${H-(vals[0]-lo)/(hi-lo)*H}" stroke="var(--line)" stroke-dasharray="4 4"/>
+    <polyline fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" points="${d}"/>
+    <text x="4" y="12" font-size="11" fill="var(--muted)">${esc(num(hi,2))}</text><text x="4" y="${H+14}" font-size="11" fill="var(--muted)">${esc(num(lo,2))} · ${esc(time(points[0].ts))} → ${esc(time(points[points.length-1].ts))}</text></svg>`;
+}
+
+function renderPills(){
+  const r = S.runner, m = S.market, g = S.gateway.health;
+  const runnerOk = r && r.alive;
+  const feedOk = m && m.ok && m.age_s != null && m.age_s < 60;
+  const gwOk = g.ok && g.mode==="paper" && g.live_trading===false;
+  const online = S.agents.filter(isOnline).length;
+  $("#pills").innerHTML = [
+    `<span class="pill"><span class="dot ${conn.mode==="live"?"ok live":conn.mode==="polling"?"warn":"bad"}"></span>${conn.mode==="live"?"Live stream":conn.mode==="polling"?"Polling":"Disconnected"}</span>`,
+    `<span class="pill" title="Coordinator runner"><span class="dot ${runnerOk?"ok":"bad"}"></span>Runner ${runnerOk?esc(r.state):"down"}</span>`,
+    `<span class="pill" title="Kraken public market data"><span class="dot ${feedOk?"ok":"warn"}"></span>Kraken ${m?ago(m.age_s):"no data"}</span>`,
+    `<span class="pill" title="Independent risk gateway"><span class="dot ${gwOk?"ok":"bad"}"></span>Gateway ${gwOk?"paper":"DOWN"}</span>`,
+    `<span class="pill"><span class="dot ${online>=40?"ok":online?"warn":"bad"}"></span>${online}/50 agents online</span>`,
+  ].join("");
+}
+
+function renderOverview(){
+  const pf = S.gateway.portfolio, sys = S.performance.system, r = S.runner;
+  const lc = r && r.last_cycle;
+  const kp = [
+    ["Agents online", `${S.agents.filter(isOnline).length}/50`, `${S.agents.filter(a=>a.capability==="partial"&&isOnline(a)).length} partial · ${S.agents.filter(a=>!isOnline(a)).length} offline`],
+    ["Last cycle", lc ? (lc.ok ? `${lc.agents_invoked}/${lc.agents_expected}` : "FAILED") : "–", lc ? `${since(lc.finished_at)} · ${lc.duration_s ?? "–"}s` : "no cycle yet"],
+    ["Next cycle", r && r.current_cycle ? "running" : r && r.next_cycle_at ? until(r.next_cycle_at) : "–", r ? `every ${r.interval_s}s` : "runner down"],
+    ["Paper equity", pf ? num(pf.equity,2) : "–", pf ? `cash ${num(pf.cash,2)} USDT` : "gateway unavailable"],
+    ["Total P&L", sys.total_return_pct==null ? "–" : pct(sys.total_return_pct), `realised ${num(sys.realised_pnl,2)} · open ${num(sys.unrealised_pnl,2)}`],
+    ["Open positions", pf ? Object.keys(pf.positions||{}).length : "–", pf ? `exposure ${num(pf.exposure,2)}` : ""],
+    ["Gateway decisions", `${sys.approved} ✓ / ${sys.rejected} ✗`, `${sys.protective_exits} protective exits`],
+    ["Alerts", S.alerts.length, S.alerts.length ? S.alerts[0].level : "all clear"],
+  ];
+  $("#kpis").innerHTML = kp.map(([k,v,s]) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
+  $("#ov-alerts").innerHTML = alertsHtml();
+  const board = S.signals.board, pairs = Object.keys(board).sort();
+  $("#ov-consensus").innerHTML = pairs.length ? `<table><thead><tr><th>Pair</th><th>Consensus</th><th>Strategy</th><th class="n">Conf.</th><th>Updated</th></tr></thead><tbody>${
+    pairs.map(p => { const v = board[p]["signal-aggregation-specialist"] || {action:"N/A"};
+      return `<tr><td>${esc(p)}</td><td>${sig(v.action)}</td><td>${esc(v.strategy||"–")}</td><td class="n">${v.confidence==null?"–":num(v.confidence,2)}</td><td class="small muted">${since(v.ts)}</td></tr>`}).join("")}</tbody></table>`
+    : empty("No signals yet: waiting for the first coordinator cycle.");
+  $("#ov-market").innerHTML = marketTable(true);
+  $("#ov-market-age").textContent = S.market ? `updated ${ago(S.market.age_s)}` : "";
+  $("#ov-decisions").innerHTML = decisionsHtml(S.coordinator.decisions.slice(0,8));
+}
+
+function alertsHtml(){
+  if (!S.alerts.length) return '<div class="alert" style="background:var(--ok-bg);color:var(--ok)">✓ No alerts: runner, Kraken feed, gateway and agents are healthy.</div>';
+  return S.alerts.map(a => `<div class="alert ${esc(a.level)}"><b>${esc(a.level.toUpperCase())}</b><span>${esc(a.text)}</span></div>`).join("");
+}
+
+function marketTable(compact){
+  const m = S.market;
+  if (!m || !m.pairs) return empty(m && m.error ? `Kraken data unavailable: ${m.error}` : "Kraken market data unavailable: is the runner started?");
+  const rows = Object.entries(m.pairs).sort().map(([p,t]) => {
+    const spread = (t.ask - t.bid) / ((t.ask + t.bid)/2) * 1e4;
+    return compact
+      ? `<tr><td>${esc(p)}</td><td class="n">${px(t.last)}</td><td class="n ${cls(t.change_pct_utc_day)}">${pct(t.change_pct_utc_day)}</td><td>${spark(m.history[p], 110, 28)}</td></tr>`
+      : `<tr><td><b>${esc(p)}</b></td><td class="n">${px(t.last)}</td><td class="n">${px(t.bid)}</td><td class="n">${px(t.ask)}</td><td class="n">${num(spread,2)}</td>
+         <td class="n ${cls(t.change_pct_utc_day)}">${pct(t.change_pct_utc_day)}</td><td class="n">${px(t.low_24h)} – ${px(t.high_24h)}</td>
+         <td class="n">${num(t.volume_24h,0)}</td><td class="n">${px(t.vwap_24h)}</td><td class="n">${num(t.trades_24h,0)}</td><td>${spark(m.history[p])}</td></tr>`;
+  }).join("");
+  const warn = m.ok === false ? `<div class="alert warning">Kraken feed error (showing last good prices): ${esc(m.error)}</div>` : "";
+  return warn + (compact
+    ? `<table><thead><tr><th>Pair</th><th class="n">Last</th><th class="n">Day</th><th>Trend</th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<table><thead><tr><th>Pair</th><th class="n">Last</th><th class="n">Bid</th><th class="n">Ask</th><th class="n">Spread bps</th><th class="n">Since 00:00 UTC</th><th class="n">24h range</th><th class="n">24h volume</th><th class="n">24h VWAP</th><th class="n">24h trades</th><th>Last ~30 min</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+
+function renderAgents(){
+  const cats = ["all", ...S.categories];
+  const sts = [["all","All"],["online","Online"],["partial","Partial"],["offline","Offline"],["error","Error"]];
+  $("#ag-filters").innerHTML = `<input id="ag-search" type="search" placeholder="Search agents" value="${esc(agentSearch)}">
+    <select id="ag-cat">${cats.map(c => `<option value="${esc(c)}" ${c===agentFilter?"selected":""}>${c==="all"?"All categories":esc(c)}</option>`).join("")}</select>
+    ${sts.map(([k,l]) => `<button type="button" data-s="${k}" aria-pressed="${k===agentStatus}">${l}</button>`).join("")}`;
+  $("#ag-search").oninput = e => {agentSearch = e.target.value; renderAgentRows(); const el=$("#ag-search"); el.focus(); el.setSelectionRange(agentSearch.length, agentSearch.length)};
+  $("#ag-cat").onchange = e => {agentFilter = e.target.value; renderAgentRows()};
+  document.querySelectorAll("#ag-filters button").forEach(b => b.onclick = () => {agentStatus = b.dataset.s; renderAgents()});
+  renderAgentRows();
+}
+function statusKey(a){ return a.status==="error" ? "error" : !isOnline(a) ? "offline" : a.capability==="partial" ? "partial" : "online"; }
+function renderAgentRows(){
+  const on = S.agents.filter(a => statusKey(a)==="online").length, pa = S.agents.filter(a => statusKey(a)==="partial").length,
+        off = S.agents.filter(a => statusKey(a)==="offline").length, er = S.agents.filter(a => statusKey(a)==="error").length;
+  $("#ag-summary").textContent = `${on} online · ${pa} partial · ${off} offline · ${er} error`;
+  let cat = null, rows = "";
+  const q = agentSearch.toLowerCase();
+  for (const a of S.agents){
+    if (agentFilter!=="all" && a.category!==agentFilter) continue;
+    if (agentStatus!=="all" && statusKey(a)!==agentStatus) continue;
+    if (q && !(a.name+" "+a.id).toLowerCase().includes(q)) continue;
+    if (a.category!==cat){cat = a.category; rows += `<tr><td colspan="11" class="small muted" style="background:var(--panel2);font-weight:700;text-transform:uppercase;letter-spacing:.05em">${esc(cat)}</td></tr>`}
+    const p = a.performance;
+    const sigs = (a.signals||[]).map(s => `${sig(s.side==="long"?"BUY":"SELL")} ${esc(s.pair)} <span class="muted">${num(s.confidence,2)}</span>`).join("<br>") || '<span class="muted">–</span>';
+    const errs = (a.errors||[]).slice(-1).map(e => `<span class="b bad" title="${esc(e.error)}">${esc(e.error).slice(0,60)}</span>`).join("") || '<span class="muted">–</span>';
+    rows += `<tr class="clickable" data-a="${esc(a.id)}"><td class="n">${a.number}</td><td><b>${esc(a.name)}</b><div class="mono muted">${esc(a.id)}</div></td>
+      <td>${agentBadge(a)}</td><td>${capBadge(a.capability)}</td><td class="small">${esc(a.current_task)||'<span class="muted">idle</span>'}</td>
+      <td class="small">${esc(a.latest_analysis)||'<span class="muted">not run yet</span>'}<div class="muted small">${since(a.updated_at)}</div></td>
+      <td class="small">${sigs}</td><td class="small">${errs}</td><td class="n">${p.runs}</td><td class="n">${p.runs?Math.round((p.success_rate||0)*100):"–"}</td><td class="n">${num(p.avg_ms,0)}</td></tr>`;
+  }
+  $("#ag-rows").innerHTML = rows || `<tr><td colspan="11">${empty("No agents match the filter.")}</td></tr>`;
+  document.querySelectorAll("#ag-rows tr.clickable").forEach(tr => tr.onclick = () => openAgent(tr.dataset.a));
+}
+
+async function openAgent(id){
+  const d = $("#drawer"), body = $("#drawer-body");
+  d.classList.add("open"); d.setAttribute("aria-hidden","false");
+  body.innerHTML = `<button class="close" type="button">Close</button><p class="muted">Loading ${esc(id)}…</p>`;
+  body.querySelector(".close").onclick = closeAgent;
+  try{
+    const r = await fetch("api/agent/"+encodeURIComponent(id), {cache:"no-store"});
+    const x = await r.json(); if (!r.ok) throw new Error(x.error || r.status);
+    const a = x.state, sp = x.spec, rep = x.report;
+    const byPair = Object.entries(a.by_pair||{}).sort().map(([p,v]) => `<tr><td>${esc(p)}</td><td><span class="b ${v.status==="ok"?"ok":v.status==="error"?"bad":"off"}">${esc(v.status)}</span></td><td class="small">${esc(v.summary)}</td><td class="small muted">${since(v.ts)}</td></tr>`).join("");
+    body.innerHTML = `<button class="close" type="button">Close</button>
+      <h2 style="margin-top:0">${esc(a.name)} <span class="muted small">#${a.number}</span></h2>
+      <p>${agentBadge(a)} ${capBadge(a.capability)} <span class="b info">${esc(sp.access)}</span></p>
+      <p>${esc(sp.mission)}</p>${sp.gap?`<div class="alert warning">${esc(sp.gap)}</div>`:""}
+      <dl class="kv"><dt>Category</dt><dd>${esc(a.category)}</dd><dt>Integrations</dt><dd>${esc((sp.integrations||[]).join(", ")||"built-in")}</dd>
+      <dt>Tools</dt><dd class="mono">${esc((sp.tools||[]).join(", "))}</dd><dt>Runs</dt><dd>${a.performance.runs} (${a.performance.ok} ok, ${a.performance.errors} errors, ${a.performance.needs_integration} n/i) · avg ${num(a.performance.avg_ms,0)} ms</dd>
+      <dt>Risk approvals</dt><dd>${a.risk.submitted} submitted · ${a.risk.approved} approved · ${a.risk.rejected} rejected</dd><dt>Updated</dt><dd>${esc(a.updated_at||"never")}</dd></dl>
+      <h3>Latest result per pair</h3>${byPair?`<table><tbody>${byPair}</tbody></table>`:empty("No per-pair results yet.")}
+      <h3>Latest full report</h3>${rep?`<pre class="log">${esc(JSON.stringify(rep, null, 2)).slice(0,20000)}</pre>`:empty("No stored report.")}
+      <h3>Recent errors</h3>${(a.errors||[]).length?`<ul class="list">${a.errors.map(e=>`<li><span class="muted small">${esc(e.ts)}</span> ${esc(e.error)}</li>`).join("")}</ul>`:empty("No errors.")}`;
+    body.querySelector(".close").onclick = closeAgent;
+  }catch(e){ body.innerHTML += `<div class="alert error">Could not load agent detail: ${esc(e.message)}</div>`; }
+}
+function closeAgent(){ const d = $("#drawer"); d.classList.remove("open"); d.setAttribute("aria-hidden","true"); }
+$("#drawer").addEventListener("click", e => { if (e.target.id==="drawer") closeAgent(); });
+document.addEventListener("keydown", e => { if (e.key==="Escape") closeAgent(); });
+
+function renderSignals(){
+  const board = S.signals.board, pairs = Object.keys(board).sort(), agents = S.signals.agents;
+  if (!pairs.length){ $("#sig-board").innerHTML = empty("No signals yet: waiting for the first coordinator cycle."); return; }
+  const name = id => (S.agents.find(a => a.id===id)||{name:id}).name;
+  $("#sig-board").innerHTML = `<table><thead><tr><th>Agent</th>${pairs.map(p=>`<th>${esc(p)}</th>`).join("")}</tr></thead><tbody>${
+    agents.map(id => `<tr><td><b>${esc(name(id))}</b></td>${pairs.map(p => { const v = (board[p]||{})[id];
+      if (!v) return `<td>${sig("N/A")}</td>`;
+      const tip = [v.summary, v.confidence!=null?`confidence ${num(v.confidence,2)}`:"", v.rationale||""].filter(Boolean).join(" · ");
+      return `<td title="${esc(tip)}">${sig(v.action)}${v.confidence!=null?` <span class="small muted">${num(v.confidence,2)}</span>`:""}<div class="small muted">${esc(v.strategy||"")}${v.strategy?" · ":""}${since(v.ts)}</div></td>`}).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
+function renderMarket(){
+  const m = S.market;
+  $("#mk-status").textContent = m ? `${m.source || "kraken"} · updated ${ago(m.age_s)}${m.ok===false?" · FEED ERROR":""}` : "no data";
+  $("#mk-table").innerHTML = marketTable(false);
+}
+
+function renderPortfolio(){
+  const pf = S.gateway.portfolio, sys = S.performance.system;
+  if (!pf){ ["#pf-kpis","#pf-curve","#pf-positions","#pf-fills","#pf-realised"].forEach(s => $(s).innerHTML = empty("Portfolio unavailable: the risk gateway is not reachable.")); return; }
+  const kp = [["Equity", num(pf.equity,2), "USDT (virtual)"],["Cash", num(pf.cash,2), "available"],["Exposure", num(pf.exposure,2), `${num(pf.exposure/pf.equity*100,1)}% of equity`],
+    ["Today", pct(pf.daily_pnl_pct*100), "since 00:00 UTC"],["Drawdown", pct(pf.drawdown_pct*100), "from peak"],["Total return", pct(sys.total_return_pct), `start ${num(sys.starting_equity,0)}`],
+    ["Closed trades", sys.closed_trades, sys.win_rate==null?"no closed trades":`win rate ${num(sys.win_rate*100,0)}%`]];
+  $("#pf-kpis").innerHTML = kp.map(([k,v,s]) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
+  $("#pf-curve").innerHTML = curve(pf.history);
+  const pos = Object.entries(pf.positions||{});
+  $("#pf-positions").innerHTML = pos.length ? `<table><thead><tr><th>Pair</th><th>Strategy</th><th class="n">Amount</th><th class="n">Entry</th><th class="n">Price</th><th class="n">Stop</th><th class="n">Target</th><th class="n">P&amp;L</th><th>Agents</th><th>Opened</th></tr></thead><tbody>${
+    pos.map(([p,v]) => { const u = (pf.unrealised||{})[p] || {}; return `<tr><td><b>${esc(p)}</b>${(pf.stale_prices||[]).includes(p)?' <span class="b warn">stale price</span>':""}</td><td>${esc(v.strategy)}</td><td class="n">${num(v.amount,6)}</td><td class="n">${px(v.entry_price)}</td><td class="n">${px(u.price)}</td><td class="n">${px(v.stop_loss)}</td><td class="n">${px(v.take_profit)}</td><td class="n ${cls(u.pnl)}">${num(u.pnl,2)}</td><td class="small">${esc((v.supporting_agents||[]).join(", "))}</td><td class="small muted">${since(v.opened_at)}</td></tr>`}).join("")}</tbody></table>`
+    : empty("No open paper positions. Positions appear when the gateway approves a proposal.");
+  const fills = pf.fills || [];
+  $("#pf-fills").innerHTML = fills.length ? `<table><thead><tr><th>Time</th><th>Pair</th><th>Side</th><th class="n">Price</th><th class="n">Amount</th><th class="n">Fee</th><th>Status</th></tr></thead><tbody>${
+    fills.map(f => `<tr><td class="small">${esc(time(f.ts))}</td><td>${esc(f.pair)}</td><td>${sig(f.side==="buy"?"BUY":"SELL")}</td><td class="n">${px(f.price)}</td><td class="n">${num(f.amount,6)}</td><td class="n">${num(f.fee,4)}</td><td><span class="b ok">filled · paper</span></td></tr>`).join("")}</tbody></table>`
+    : empty("No paper fills yet.");
+  const rl = pf.realised || [];
+  $("#pf-realised").innerHTML = rl.length ? `<table><thead><tr><th>Closed</th><th>Pair</th><th>Strategy</th><th class="n">P&amp;L</th></tr></thead><tbody>${
+    rl.map(r => `<tr><td class="small">${esc(time(r.ts))}</td><td>${esc(r.pair)}</td><td>${esc(r.strategy)}</td><td class="n ${cls(r.pnl)}">${num(r.pnl,2)}</td></tr>`).join("")}</tbody></table>`
+    : empty("No closed trades yet.");
+}
+
+function gwDecisionRow(d){
+  const ok = d.approved;
+  return `<tr><td class="small">${esc(time(d.ts))}</td><td>${esc(d.pair||"–")}</td><td>${sig(d.side==="exit"?"SELL":d.side==="long"?"BUY":"N/A")}</td>
+    <td><span class="b ${ok?"ok":"bad"}">${ok?"APPROVED":"REJECTED"}</span>${d.origin==="gateway-protective-exit"?' <span class="b info">protective exit</span>':""}</td>
+    <td class="small">${esc((d.reasons||[]).join("; "))}</td><td class="mono muted">${esc(d.proposal_id||"")}</td></tr>`;
+}
+function renderRisk(){
+  const g = S.gateway, h = g.health, L = g.limits, pf = g.portfolio, sys = S.performance.system;
+  const kp = [["Mode", h.ok ? (h.mode||"?").toUpperCase() : "DOWN", h.live_trading===false?"live trading disabled":"–"],["Approved", sys.approved, "proposals"],["Rejected", sys.rejected, "blocked by risk checks"],
+    ["Protective exits", sys.protective_exits, "stop / target"],["Open positions", pf?Object.keys(pf.positions||{}).length:"–", L?`max ${L.max_open_positions}`:""]];
+  $("#rk-kpis").innerHTML = kp.map(([k,v,s]) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
+  $("#rk-health").innerHTML = !h.ok ? `<div class="alert critical">Gateway unreachable: ${esc(h.error||"")}. Every proposal is rejected (fail closed).</div>`
+    : `<dl class="kv"><dt>Status</dt><dd><span class="b ok">reachable</span></dd><dt>Mode</dt><dd><b>${esc(h.mode)}</b> · live trading <b>${h.live_trading===false?"disabled":"UNKNOWN"}</b></dd>
+       <dt>Price source</dt><dd>${esc(h.price_source)}</dd><dt>Last price check</dt><dd>${h.last_price_check&&h.last_price_check.ts?`${since(h.last_price_check.ts)} · ${h.last_price_check.ok?'<span class="b ok">ok</span>':`<span class="b bad">failed</span> ${esc(h.last_price_check.error)}`}`:"–"}</dd>
+       <dt>Started</dt><dd>${esc(h.started_at||"–")} (pid ${esc(h.pid)})</dd><dt>Limits SHA-256</dt><dd class="mono">${esc((h.limits_sha256||"").slice(0,16))}…</dd></dl>`;
+  if (!L || !pf){ $("#rk-limits").innerHTML = empty("Limits unavailable: gateway not reachable."); }
+  else {
+    const eq = pf.equity, expPct = pf.exposure/eq, cap = L.max_total_exposure_pct;
+    const meter = (v, max) => { const r = Math.min(v/max,1); return `<div class="meter ${r>=1?"badm":r>.75?"warnm":""}"><i style="width:${(r*100).toFixed(1)}%"></i></div>`; };
+    const perPair = Object.entries(pf.positions||{}).map(([p,v]) => { const val = ((pf.unrealised||{})[p]||{}).value || v.amount*v.entry_price;
+      return `<div class="small">${esc(p)} ${num(val/eq*100,1)}% / ${num(L.max_position_pct*100,0)}%${meter(val/eq, L.max_position_pct)}</div>`}).join("");
+    $("#rk-limits").innerHTML = `<div class="small">Total exposure ${num(expPct*100,1)}% / ${num(cap*100,0)}%</div>${meter(expPct, cap)}
+      <div class="small" style="margin-top:8px">Open positions ${Object.keys(pf.positions||{}).length} / ${L.max_open_positions}</div>${meter(Object.keys(pf.positions||{}).length, L.max_open_positions)}
+      <div class="small" style="margin-top:8px">Daily loss ${pct(pf.daily_pnl_pct*100)} (halt at −${num(L.max_daily_loss_pct*100,0)}%) · drawdown ${pct(pf.drawdown_pct*100)} (halt at −${num(L.max_drawdown_pct*100,0)}%)</div>
+      ${perPair?`<div style="margin-top:8px">${perPair}</div>`:""}
+      <table style="margin-top:10px"><tbody>${[["Allowed pairs", L.allowed_pairs.join(", ")],["Min confidence", L.min_confidence],["Stake per trade", `min ${L.min_stake} USDT, max ${num(L.max_position_pct*100,0)}% of equity`],
+        ["Stop loss", L.require_stop_loss?`required, max ${L.max_stop_distance_pct*100}% away`:"optional"],["Max price deviation", `${L.max_price_deviation_pct*100}%`],
+        ["Required reviewers", L.required_reviewers.join(", ")],["Fees / slippage", `${L.fee_rate*100}% / ${L.assumed_slippage_bps} bps`]].map(([k,v])=>`<tr><td class="muted">${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</tbody></table>`;
+  }
+  const dh = `<table><thead><tr><th>Time</th><th>Pair</th><th>Side</th><th>Result</th><th>Risk checks</th><th>Proposal</th></tr></thead><tbody>`;
+  $("#rk-decisions").innerHTML = g.decisions.length ? dh + g.decisions.map(gwDecisionRow).join("") + "</tbody></table>" : empty(h.ok ? "No proposals have reached the gateway yet." : "Unavailable: gateway not reachable.");
+  $("#rk-blocked").innerHTML = g.blocked.length ? dh + g.blocked.map(gwDecisionRow).join("") + "</tbody></table>" : empty("No blocked trades.");
+}
+
+function decisionsHtml(list){
+  if (!list.length) return empty("No coordinator decisions yet.");
+  return `<ul class="list">${list.map(d => {
+    let t = "";
+    if (d.type==="strategy_review") t = `${esc(d.pair)}: ` + Object.entries(d.verdicts||{}).map(([k,v]) => `${esc(k)} <span class="b ${v.verdict==="APPROVE"?"ok":"bad"}">${esc(v.verdict)}</span>`).join(" ");
+    else if (d.type==="proposal_withheld") t = `${sig(d.side==="long"?"BUY":"SELL")} ${esc(d.pair)} (${esc(d.strategy)}) withheld: ${esc((d.reasons||[]).join("; "))}`;
+    else if (d.type==="gateway_submission") t = `${sig(d.side==="long"?"BUY":"SELL")} ${esc(d.pair)} (${esc(d.strategy)}) → <span class="b ${d.gateway&&d.gateway.approved?"ok":"bad"}">${d.gateway&&d.gateway.approved?"APPROVED":"REJECTED"}</span> ${esc(((d.gateway||{}).reasons||[]).join("; "))}`;
+    else if (d.type==="compare_findings") t = `${esc(d.pair)}: views ${esc(JSON.stringify(d.signal_views))}${d.conflict?' <span class="b warn">conflict</span>':""}`;
+    else if (d.type==="no_trade") t = `${esc(d.pair)}: ${esc(d.reason)}`;
+    else if (d.type==="cycle_start") t = `pairs ${esc((d.pairs||[]).join(", "))} · data ${esc(d.data_source)} · gateway ${d.gateway&&d.gateway.ok?"ok":"DOWN"}`;
+    else if (d.type==="langgraph_preflight") t = `gateway ${d.gateway&&d.gateway.ok?"healthy → full cycle":"unhealthy → research only"}`;
+    else t = esc(d.cycle_id||d.workflow||"");
+    return `<li><span class="muted small">${esc(time(d.ts))}</span> <b>${esc(d.type.replaceAll("_"," "))}</b> ${t}</li>`}).join("")}</ul>`;
+}
+function renderCoordinator(){
+  const c = S.collaboration;
+  $("#co-flows").innerHTML = c.workflows.map(w => `<div><b>${esc(w.name.replaceAll("_"," "))}</b> ${w.active?'<span class="b ok">active</span>':'<span class="b off">no hand-offs yet</span>'}
+    <div class="flow">${w.chain.map((a,i) => `<span class="node">${esc(a)}</span>${i<w.hops.length?`<span class="arrow">→ <b>${w.hops[i].count}</b> →</span>`:""}`).join("")}</div></div>`).join("");
+  $("#co-decisions").innerHTML = decisionsHtml(S.coordinator.decisions);
+  $("#co-handoffs").innerHTML = c.recent_handoffs.length ? `<ul class="list">${c.recent_handoffs.map(h => `<li><span class="muted small">${esc(time(h.sent_at))}</span> <b>${esc(h.sender)}</b> → <b>${esc(h.recipient)}</b> ${h.workflow?`<span class="b info">${esc(h.workflow)}</span>`:""}<div class="small muted">${esc(h.summary)}</div></li>`).join("")}</ul>` : empty("No hand-offs recorded yet.");
+}
+
+function renderPerformance(){
+  const s = S.performance.system;
+  const kp = [["Total return", pct(s.total_return_pct), `equity ${num(s.equity,2)}`],["Realised P&L", num(s.realised_pnl,2), `${s.closed_trades} closed trades`],["Unrealised P&L", num(s.unrealised_pnl,2), "open positions"],
+    ["Win rate", s.win_rate==null?"–":num(s.win_rate*100,0)+"%", "closed trades"],["Approval rate", s.proposals_to_gateway?num(s.approved/s.proposals_to_gateway*100,0)+"%":"–", `${s.proposals_to_gateway} proposals`]];
+  $("#pe-kpis").innerHTML = kp.map(([k,v,sub]) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join("");
+  const sp = S.performance.strategies_by_pair, pairs = Object.keys(sp).sort();
+  $("#pe-strategies").innerHTML = pairs.length ? `<table><thead><tr><th>Pair</th><th>Strategy</th><th>Verdict</th><th class="n">Return</th><th class="n">Sharpe</th><th class="n">Max DD</th><th class="n">Trades</th><th class="n">OOS Sharpe</th><th class="n">OOS trades</th><th>Reasons</th></tr></thead><tbody>${
+    pairs.flatMap(p => Object.entries(sp[p].verdicts).map(([st,v]) => { const m = sp[p].backtest[st] || {}, o = m.out_of_sample || {};
+      return `<tr><td>${esc(p)}</td><td>${esc(st)}</td><td><span class="b ${v.verdict==="APPROVE"?"ok":"bad"}">${esc(v.verdict)}</span></td><td class="n ${cls(m.total_return)}">${m.total_return==null?"–":pct(m.total_return*100)}</td>
+      <td class="n">${num(m.sharpe,2)}</td><td class="n">${m.max_drawdown==null?"–":pct(m.max_drawdown*100)}</td><td class="n">${m.trades??"–"}</td><td class="n">${num(o.sharpe,2)}</td><td class="n">${o.trades??"–"}</td><td class="small">${esc((v.reasons||[]).join("; "))}</td></tr>`})).join("")}</tbody></table>`
+    : empty("No strategy reviews yet.");
+  const ag = S.performance.agents;
+  $("#pe-agents").innerHTML = `<table><thead><tr><th class="n">#</th><th>Agent</th><th>Category</th><th class="n">Runs</th><th class="n">OK</th><th class="n">Errors</th><th class="n">N/I</th><th class="n">Success</th><th class="n">Avg ms</th><th class="n">Submitted</th><th class="n">Approved</th><th class="n">Rejected</th></tr></thead><tbody>${
+    ag.map(a => `<tr><td class="n">${a.number}</td><td>${esc(a.name)}</td><td class="small muted">${esc(a.category)}</td><td class="n">${a.runs}</td><td class="n">${a.ok}</td><td class="n ${a.errors?"down":""}">${a.errors}</td><td class="n">${a.needs_integration}</td>
+      <td class="n">${a.success_rate==null?"–":num(a.success_rate*100,0)+"%"}</td><td class="n">${num(a.avg_ms,0)}</td><td class="n">${a.risk.submitted}</td><td class="n">${a.risk.approved}</td><td class="n">${a.risk.rejected}</td></tr>`).join("")}</tbody></table>`;
+}
+
+function renderHealth(){
+  const r = S.runner, v = S.verification;
+  $("#he-runner").innerHTML = !r ? `<div class="alert critical">Runner has never started. Start the system with <code>ai_team/system.sh start</code>.</div>`
+    : `<dl class="kv"><dt>Runner</dt><dd>${r.alive?'<span class="b ok">running</span>':'<span class="b bad">down</span>'} ${esc(r.state)} · pid ${esc(r.pid)}</dd><dt>Heartbeat</dt><dd>${ago(r.heartbeat_age_s)}</dd>
+       <dt>Orchestrator</dt><dd>${esc(r.orchestrator)} · every ${esc(r.interval_s)}s · market every ${esc(r.market_interval_s)}s</dd><dt>Data</dt><dd>${esc(r.data_source)} · ${esc((r.pairs||[]).join(", "))} · ${esc(r.timeframe)}</dd>
+       <dt>Cycles</dt><dd>${r.cycles_completed} completed · ${r.cycles_failed} failed</dd><dt>Current</dt><dd>${r.current_cycle?`running since ${esc(time(r.current_cycle.started_at))}`:"idle"}</dd>
+       <dt>Last cycle</dt><dd>${r.last_cycle?(r.last_cycle.ok?`${r.last_cycle.agents_invoked}/${r.last_cycle.agents_expected} agents · ${r.last_cycle.proposals} proposals · ${r.last_cycle.approved} approved · ${r.last_cycle.duration_s}s · ${since(r.last_cycle.finished_at)}`:`<span class="b bad">failed</span> ${esc(r.last_cycle.error)}`):"–"}</dd>
+       <dt>Mode</dt><dd><b>${r.mode==="paper"&&r.live_trading===false?"PAPER (live trading disabled)":"UNKNOWN"}</b></dd>
+       <dt>Verification</dt><dd>${v?`${v.passed?'<span class="b ok">PASS</span>':'<span class="b bad">FAIL</span>'} ${esc(JSON.stringify(v.counts))}`:"not run"}</dd></dl>`;
+  $("#he-alerts").innerHTML = alertsHtml();
+  $("#he-integrations").innerHTML = `<ul class="list">${S.integrations.map(i => `<li><span class="b ${i.installed?"ok":"off"}">${i.installed?"installed":"not installed"}</span> <b>${esc(i.name)}</b> <span class="muted small">used by ${i.used_by.length} agent(s)</span></li>`).join("")}</ul>`;
+  const errs = S.agents.filter(a => (a.errors||[]).length);
+  $("#he-errors").innerHTML = errs.length ? `<ul class="list">${errs.map(a => `<li><b>${esc(a.name)}</b> <span class="muted small">${esc(a.errors[a.errors.length-1].ts)}</span><div class="small">${esc(a.errors[a.errors.length-1].error)}</div></li>`).join("")}</ul>` : empty("No agent errors recorded.");
+  $("#he-logs").textContent = S.logs.length ? S.logs.join("\n") : "No runner log yet.";
+}
+
+function render(){
+  if (!S) return;
+  try{
+    renderPills(); renderTabs(); renderOverview(); renderSignals(); renderMarket(); renderPortfolio(); renderRisk(); renderCoordinator(); renderPerformance(); renderHealth();
+    if (!document.activeElement || document.activeElement.id!=="ag-search") renderAgents(); else renderAgentRows();
+  }catch(e){ console.error(e); }
+}
+
+let pollTimer = null;
+async function poll(){
+  try{ const r = await fetch("api/state",{cache:"no-store"}); S = await r.json(); conn.last = Date.now(); render(); }
+  catch(e){ conn.mode = "down"; if (S) renderPills(); }
+}
+function connect(){
+  if (!window.EventSource){ conn.mode="polling"; poll(); pollTimer = setInterval(poll, 5000); return; }
+  const es = new EventSource("api/stream");
+  es.addEventListener("state", e => { conn.mode = "live"; conn.last = Date.now(); S = JSON.parse(e.data); if (pollTimer){clearInterval(pollTimer); pollTimer=null} render(); });
+  es.onerror = () => { conn.mode = "polling"; if (!pollTimer){ poll(); pollTimer = setInterval(poll, 5000); } if (S) renderPills(); };
+}
+(function theme(){
+  const t = store.get("theme"); if (t) document.documentElement.dataset.theme = t;
+  $("#themebtn").onclick = () => { const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
+    const nx = cur==="dark"?"light":"dark"; document.documentElement.dataset.theme = nx; store.set("theme", nx); };
+})();
+show(); connect();
 </script>
 </body>
 </html>

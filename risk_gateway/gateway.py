@@ -23,6 +23,8 @@ if str(HERE.parent) not in sys.path:
 from ai_team.data import KrakenPublicData, SyntheticMarketData  # noqa: E402
 
 
+HISTORY_LIMIT = 5000  # equity marks kept for the dashboard curve
+
 ALLOWED_FIELDS = {
     "proposal_id",
     "pair",
@@ -54,10 +56,22 @@ class PriceSource:
             KrakenPublicData() if kind == "kraken" else SyntheticMarketData()
         )
 
+        self._last: dict[str, float] = {}
+
     def price(self, pair: str) -> float:
-        if isinstance(self._src, KrakenPublicData):
-            self._src._cache.clear()  # always fresh
-        return float(self._src.ohlcv(pair, "1m", 5)["close"].iloc[-1])
+        """Fresh price or an exception; used for every approval and fill."""
+        px = float(self._src.ticker([pair])[pair]["last"])
+        self._last[pair] = px
+        return px
+
+    def price_or_last(self, pair: str) -> tuple[float, bool]:
+        """For valuation/display only: fall back to the last known price, flagged stale."""
+        try:
+            return self.price(pair), False
+        except Exception:
+            if pair in self._last:
+                return self._last[pair], True
+            raise
 
 
 class RiskGateway:
@@ -72,6 +86,9 @@ class RiskGateway:
         self.log_file = self.state_dir / "decisions.jsonl"
         self.prices = price_source
         self._lock = threading.Lock()
+        self.started_at = _now()
+        self.exits_executed = 0
+        self.last_price_check: dict[str, Any] = {"ts": None, "ok": None, "error": None}
         self.portfolio = self._load()
 
     # ---------------- persistence ----------------
@@ -106,9 +123,14 @@ class RiskGateway:
 
     def _snapshot(self) -> dict:
         pf = self.portfolio
-        unrealised, mv = {}, 0.0
+        unrealised, mv, stale = {}, 0.0, []
         for pair, p in pf["positions"].items():
-            px = self.prices.price(pair)
+            try:
+                px, is_stale = self.prices.price_or_last(pair)
+            except Exception:
+                px, is_stale = p["entry_price"], True
+            if is_stale:
+                stale.append(pair)
             value = p["amount"] * px
             mv += value
             unrealised[pair] = {
@@ -129,6 +151,7 @@ class RiskGateway:
             "unrealised": unrealised,
             "daily_pnl_pct": equity / pf["day_start_equity"] - 1,
             "drawdown_pct": equity / pf["peak_equity"] - 1,
+            "stale_prices": stale,
         }
 
     # ---------------- decision ----------------
@@ -155,7 +178,21 @@ class RiskGateway:
             return {**base, "approved": False, "reasons": [structural]}
 
         snap = self._snapshot()
-        price = self.prices.price(p["pair"])
+        # Fail closed: never decide on stale or missing prices.
+        if snap["stale_prices"]:
+            return {
+                **base,
+                "approved": False,
+                "reasons": [f"price feed stale for open positions {snap['stale_prices']}"],
+            }
+        try:
+            price = self.prices.price(p["pair"])
+        except Exception as e:
+            return {
+                **base,
+                "approved": False,
+                "reasons": [f"price feed unavailable: {type(e).__name__}: {e}"],
+            }
         positions = snap["positions"]
 
         if p["side"] == "exit":
@@ -301,8 +338,51 @@ class RiskGateway:
 
     def _mark(self) -> None:
         snap = self._snapshot()
-        self.portfolio["history"].append({"ts": _now(), "equity": snap["equity"]})
+        history = self.portfolio["history"]
+        history.append({"ts": _now(), "equity": snap["equity"]})
+        del history[:-HISTORY_LIMIT]
         self._save()
+
+    # ---------------- protective exits ----------------
+    def check_exits(self) -> list[dict]:
+        """
+        Execute paper stop-loss / take-profit exits at the gateway's own price.
+
+        Runs inside the gateway so protective exits never depend on the agents
+        or the coordinator being alive. Also records an equity mark.
+        """
+        decisions = []
+        with self._lock:
+            try:
+                for pair, pos in list(self.portfolio["positions"].items()):
+                    price = self.prices.price(pair)
+                    reason = None
+                    if pos.get("stop_loss") and price <= pos["stop_loss"]:
+                        reason = f"stop loss hit ({price:.6g} <= {pos['stop_loss']:.6g})"
+                    elif pos.get("take_profit") and price >= pos["take_profit"]:
+                        reason = f"take profit hit ({price:.6g} >= {pos['take_profit']:.6g})"
+                    if reason:
+                        fill = self._close({"pair": pair, "proposal_id": f"exit-{pos['proposal_id']}"}, price)
+                        d = {
+                            "type": "gateway",
+                            "proposal_id": fill["proposal_id"],
+                            "ts": _now(),
+                            "pair": pair,
+                            "side": "exit",
+                            "approved": True,
+                            "reasons": [reason],
+                            "origin": "gateway-protective-exit",
+                            "fill": fill,
+                            "limits_sha256": self.limits_sha256,
+                        }
+                        self._log(d)
+                        decisions.append(d)
+                        self.exits_executed += 1
+                self._mark()
+                self.last_price_check = {"ts": _now(), "ok": True, "error": None}
+            except Exception as e:
+                self.last_price_check = {"ts": _now(), "ok": False, "error": f"{type(e).__name__}: {e}"}
+        return decisions
 
     def health(self) -> dict:
         return {
@@ -312,4 +392,8 @@ class RiskGateway:
             "limits_sha256": self.limits_sha256,
             "price_source": self.prices.kind,
             "pid": os.getpid(),
+            "started_at": self.started_at,
+            "open_positions": len(self.portfolio["positions"]),
+            "protective_exits_executed": self.exits_executed,
+            "last_price_check": self.last_price_check,
         }

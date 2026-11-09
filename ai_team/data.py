@@ -9,6 +9,7 @@ source used by tests and as an explicit fallback.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -35,26 +36,96 @@ class MarketData(Protocol):
     def trades(self, pair: str, limit: int = 500) -> pd.DataFrame: ...
 
 
+class KrakenUnavailable(RuntimeError):
+    """Kraken could not be reached or reported a (possibly temporary) error."""
+
+
+# Kraken spells some assets differently in pair names.
+_KRAKEN_ASSET_ALIASES = {"XBT": "BTC", "XDG": "DOGE"}
+
+
 class KrakenPublicData:
     name = "kraken-public"
     base = "https://api.kraken.com/0/public/"
+    # Kraken's public API allows roughly one call per second; stay under it
+    # across every thread that shares this process.
+    MIN_INTERVAL = 0.35
+    RETRIES = 3
+    _throttle_lock = threading.Lock()
+    _last_call = 0.0
 
-    def __init__(self, timeout: float = 15.0) -> None:
+    def __init__(self, timeout: float = 15.0, opener: urllib.request.OpenerDirector | None = None) -> None:
         self.timeout = timeout
         self._cache: dict[tuple, Any] = {}
+        self._opener = opener or urllib.request.build_opener()
 
     @staticmethod
     def _symbol(pair: str) -> str:
         return pair.replace("/", "")
 
+    @classmethod
+    def _throttle(cls) -> None:
+        with cls._throttle_lock:
+            wait = cls.MIN_INTERVAL - (time.monotonic() - cls._last_call)
+            if wait > 0:
+                time.sleep(wait)
+            cls._last_call = time.monotonic()
+
     def _get(self, endpoint: str, **params) -> dict:
         url = self.base + endpoint + "?" + urllib.parse.urlencode(params)
-        req = urllib.request.Request(url, headers={"User-Agent": "ai-team-paper/1.0"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            body = json.loads(resp.read())
-        if body.get("error"):
-            raise RuntimeError(f"Kraken {endpoint} error: {body['error']}")
-        return {k: v for k, v in body["result"].items() if k != "last"}
+        last_error: Exception | None = None
+        for attempt in range(self.RETRIES):
+            self._throttle()
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "ai-team-paper/1.0"})
+                with self._opener.open(req, timeout=self.timeout) as resp:
+                    body = json.loads(resp.read())
+            except (OSError, ValueError) as e:  # HTTP 5xx, timeouts, DNS, bad JSON
+                last_error = e
+            else:
+                errors = body.get("error") or []
+                if not errors:
+                    return {k: v for k, v in body["result"].items() if k != "last"}
+                # EService:* / EAPI:Rate limit are transient; anything else is a real error.
+                if not any(e.startswith(("EService:", "EAPI:Rate limit")) for e in errors):
+                    raise KrakenUnavailable(f"Kraken {endpoint} error: {errors}")
+                last_error = KrakenUnavailable(f"Kraken {endpoint} error: {errors}")
+            time.sleep(0.5 * 2**attempt)
+        raise KrakenUnavailable(f"Kraken {endpoint} unavailable after {self.RETRIES} attempts: {last_error}")
+
+    def _pair_names(self, pairs: list[str]) -> dict[str, str]:
+        """Map Kraken's result keys (e.g. XBTUSDT) back to our pair names (BTC/USDT)."""
+        key = ("pairmap", tuple(pairs))
+        if key not in self._cache:
+            info = self._get("AssetPairs", pair=",".join(self._symbol(p) for p in pairs))
+            mapping = {}
+            for k, v in info.items():
+                base, quote = v["wsname"].split("/")
+                name = f"{_KRAKEN_ASSET_ALIASES.get(base, base)}/{_KRAKEN_ASSET_ALIASES.get(quote, quote)}"
+                mapping[k] = name
+            self._cache[key] = mapping
+        return self._cache[key]
+
+    def ticker(self, pairs: list[str]) -> dict[str, dict[str, float]]:
+        """Live top-of-book and 24h statistics; never cached."""
+        names = self._pair_names(pairs)
+        raw = self._get("Ticker", pair=",".join(self._symbol(p) for p in pairs))
+        out = {}
+        for k, t in raw.items():
+            last, open_ = float(t["c"][0]), float(t["o"])
+            out[names.get(k, k)] = {
+                "last": last,
+                "bid": float(t["b"][0]),
+                "ask": float(t["a"][0]),
+                "open_utc_day": open_,
+                "change_pct_utc_day": (last / open_ - 1) * 100 if open_ else 0.0,
+                "high_24h": float(t["h"][1]),
+                "low_24h": float(t["l"][1]),
+                "volume_24h": float(t["v"][1]),
+                "vwap_24h": float(t["p"][1]),
+                "trades_24h": int(t["t"][1]),
+            }
+        return out
 
     def ohlcv(self, pair: str, timeframe: str = "1h", limit: int = 500) -> pd.DataFrame:
         key = ("ohlcv", pair, timeframe)
@@ -143,6 +214,25 @@ class SyntheticMarketData:
         bids = [(mid - tick * (i + 1), float(rng.lognormal(0, 1))) for i in range(depth)]
         asks = [(mid + tick * (i + 1), float(rng.lognormal(0, 1))) for i in range(depth)]
         return {"bids": bids, "asks": asks}
+
+    def ticker(self, pairs: list[str]) -> dict[str, dict[str, float]]:
+        out = {}
+        for p in pairs:
+            df = self.ohlcv(p, "1h", 25)
+            last, open_ = float(df["close"].iloc[-1]), float(df["open"].iloc[0])
+            out[p] = {
+                "last": last,
+                "bid": last * 0.9999,
+                "ask": last * 1.0001,
+                "open_utc_day": open_,
+                "change_pct_utc_day": (last / open_ - 1) * 100,
+                "high_24h": float(df["high"].max()),
+                "low_24h": float(df["low"].min()),
+                "volume_24h": float(df["volume"].sum()),
+                "vwap_24h": float((df["close"] * df["volume"]).sum() / df["volume"].sum()),
+                "trades_24h": 0,
+            }
+        return out
 
     def trades(self, pair: str, limit: int = 500) -> pd.DataFrame:
         rng = self._rng(pair, 2)

@@ -86,4 +86,4 @@ Overall: **PASS**
 - Qlib: NOT installed - used by 6 agent(s)
 - LangGraph: installed unknown - used by 1 agent(s)
 - NautilusTrader: NOT installed - used by 8 agent(s)
-- freqtrade (paper bot): installed 2026.11-dev-684d884 - used by 2 agent(s)
+- freqtrade (paper bot): installed 2026.11-dev-61c789f - used by 2 agent(s)

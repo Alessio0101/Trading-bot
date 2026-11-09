@@ -127,7 +127,7 @@ class Coordinator:
             task, self.data, dict(inbox), self.universe, portfolio or {}, health or {}, self.state.decisions()
         )
         report = run_specialist(agent_id, ctx)
-        self.state.finish(report)
+        self.state.finish(report, pair)
         self.bus.publish(
             agent_id,
             COORDINATOR_ID,

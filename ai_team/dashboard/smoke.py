@@ -58,16 +58,17 @@ def main() -> int:
 
     def dashboard_sees_gateway():
         s = get_json(a.dashboard + "/api/state")
-        return s if s["gateway"].get("ok") else None
+        return s if s["gateway"]["health"].get("ok") else None
 
     state = wait_for(dashboard_sees_gateway, deadline, "dashboard to report the gateway")
     check(len(state["agents"]) == 50, f"expected 50 agents, got {len(state['agents'])}")
     check({x["id"] for x in state["agents"]} >= {"technical-analyst", "volume-analyst"}, "agent ids missing")
-    gw = state["gateway"]
+    gw = state["gateway"]["health"]
     check(gw.get("mode") == "paper" and gw.get("live_trading") is False, f"dashboard gateway view: {gw}")
     with OPENER.open(a.dashboard + "/", timeout=5) as r:
-        check("AI Trading Team" in r.read().decode(), "dashboard page did not render")
-    print(f"dashboard OK: {len(state['agents'])} agents, gateway {state['gateway']['mode']}")
+        page = r.read().decode()
+        check("AI Trading Desk" in page and 'id="tab-agents"' in page, "dashboard page did not render")
+    print(f"dashboard OK: {len(state['agents'])} agents, gateway {gw['mode']}")
     return 0
 
 

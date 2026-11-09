@@ -36,14 +36,46 @@
 | `ai_team/verify.py` | Verification: files, permissions and a real invocation of all 50 |
 | `risk_gateway/` | Independent risk gateway and paper broker |
 
-## Quick start
+## Running the whole system
 
 ```bash
-pip install pandas numpy langgraph          # langgraph is optional
-python -m risk_gateway.server --data kraken &            # 1. gateway (paper)
-python -m ai_team.dashboard.server &                     # 2. dashboard → http://127.0.0.1:8800
-python -m ai_team.cli --data kraken cycle --langgraph    # 3. one coordinator cycle
-python -m ai_team.cli verify                             # 4. verification report
+ai_team/system.sh start     # creates .venv, installs ai_team/requirements.txt, starts everything
+ai_team/system.sh status    # processes, paper mode, agents online, Kraken feed age, alerts
+ai_team/system.sh logs      # follow the runner log
+ai_team/system.sh stop      # stops dashboard, runner and gateway
+ai_team/system.sh verify    # test suite + 50-agent verification
+```
+
+Dashboard: **http://127.0.0.1:8800**. It updates live via Server-Sent Events and falls back to
+polling every 5 s.
+
+| Process | Port | What it does |
+|---------|------|--------------|
+| `risk_gateway.server` | 8790 | Independent paper broker. Prices every decision from its own Kraken ticker, fails closed on stale prices, executes stop-loss / take-profit exits every 15 s |
+| `ai_team.runner` | – | Kraken tickers every 10 s (`state/market.json`). Every 5 min the LangGraph coordinator invokes all 50 agents for each pair and submits approved-for-review proposals to the gateway |
+| `ai_team.dashboard.server` | 8800 | Read-only web UI built from the runner's state files and the gateway API |
+
+Environment overrides: `AI_TEAM_DATA=synthetic` (offline), `AI_TEAM_INTERVAL=300`,
+`AI_TEAM_GATEWAY_PORT`, `AI_TEAM_DASHBOARD_PORT`. Everything binds to 127.0.0.1. Kraken's
+public API needs no key, and the system holds no credentials.
+
+The dashboard has these tabs:
+- **Overview:** KPIs, alerts, consensus signals, live prices and recent decisions.
+- **Agents:** all 50, with status, task, analysis, signals, errors and performance. Click an agent for its full report.
+- **Signals:** the BUY / SELL / HOLD / N/A board.
+- **Market:** Kraken last price, bid, ask, spread, daily change, 24 h range, volume and trend.
+- **Portfolio & Trades:** equity curve, positions, fills and closed trades.
+- **Risk Gateway:** health, limits, exposure, every decision and the blocked trades.
+- **Coordinator:** workflows with hand-off counts, decisions and hand-offs.
+- **Performance:** system, strategy review and agent statistics.
+- **Logs & Health:** runner status, integrations, errors and the log tail.
+
+## Single commands
+
+```bash
+python -m ai_team.cli --data kraken cycle --langgraph    # one coordinator cycle
+python -m ai_team.cli agent liquidity-analyst --upstream volume-analyst
+python -m ai_team.cli verify                             # verification report
 ```
 
 With Claude Code, open this folder, accept the workspace trust prompt once (so the

@@ -226,15 +226,24 @@ def test_dashboard_state_reports_unreachable_gateway(tmp_path):
     from ai_team.dashboard.server import collect
 
     state = collect(tmp_path, GatewayClient("http://127.0.0.1:9", timeout=1))
-    assert state["gateway"]["ok"] is False
-    assert "mode" not in state["gateway"]
+    assert state["gateway"]["health"]["ok"] is False
+    assert "mode" not in state["gateway"]["health"]
     assert len(state["agents"]) == 50
-    assert state["portfolio"] is None
+    assert state["gateway"]["portfolio"] is None
+    assert state["runner"] is None and state["market"] is None
+    levels = {a["level"] for a in state["alerts"]}
+    texts = " ".join(a["text"] for a in state["alerts"])
+    assert (
+        "critical" in levels and "Risk gateway unreachable" in texts and "Runner has never started" in texts
+    )
 
 
 def test_dashboard_state_with_gateway(tmp_path, gateway_url):
     from ai_team.dashboard.server import collect
 
     state = collect(tmp_path, GatewayClient(gateway_url))
-    assert state["gateway"]["mode"] == "paper" and state["gateway"]["live_trading"] is False
-    assert state["portfolio"]["equity"] == pytest.approx(10000.0)
+    h = state["gateway"]["health"]
+    assert h["mode"] == "paper" and h["live_trading"] is False
+    assert state["gateway"]["portfolio"]["equity"] == pytest.approx(10000.0)
+    assert state["gateway"]["limits"]["read_only"] is True
+    assert state["mode"] == {"paper": True, "live_trading": False}
