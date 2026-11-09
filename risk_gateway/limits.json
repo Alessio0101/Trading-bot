@@ -1,0 +1,18 @@
+{
+    "mode": "paper",
+    "starting_equity": 10000.0,
+    "allowed_pairs": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT"],
+    "min_confidence": 0.55,
+    "min_stake": 10.0,
+    "max_position_pct": 0.10,
+    "max_total_exposure_pct": 0.50,
+    "max_open_positions": 3,
+    "max_daily_loss_pct": 0.03,
+    "max_drawdown_pct": 0.10,
+    "require_stop_loss": true,
+    "max_stop_distance_pct": 0.08,
+    "max_price_deviation_pct": 0.02,
+    "required_reviewers": ["backtesting-specialist", "independent-risk-reviewer"],
+    "fee_rate": 0.0026,
+    "assumed_slippage_bps": 5
+}

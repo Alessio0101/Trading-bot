@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Trading Team</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#14171c;--muted:#5d6673;--line:#e3e6eb;--ok:#15803d;--ok-bg:#e7f6ec;
+--warn:#a16207;--warn-bg:#fdf4dc;--bad:#b91c1c;--bad-bg:#fde8e8;--info:#1d4ed8;--info-bg:#e6edfd;--off:#6b7280;--off-bg:#eef0f3}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1216;--panel:#171b21;--ink:#e7eaee;--muted:#9aa3ae;--line:#272d36;
+--ok:#4ade80;--ok-bg:#15301f;--warn:#facc15;--warn-bg:#352c0c;--bad:#f87171;--bad-bg:#3a1717;--info:#93b4fd;--info-bg:#18264a;--off:#9aa3ae;--off-bg:#232830}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:20px 16px 8px;max-width:1400px;margin:auto}h1{margin:0;font-size:22px}header p{margin:4px 0 0;color:var(--muted)}
+main{max-width:1400px;margin:auto;padding:8px 16px 40px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.panel,.card{min-width:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.card span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.panel h2{margin:0 0 10px;font-size:15px}
+.badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{color:var(--ok);background:var(--ok-bg)}.warn{color:var(--warn);background:var(--warn-bg)}.bad{color:var(--bad);background:var(--bad-bg)}
+.info{color:var(--info);background:var(--info-bg)}.off{color:var(--off);background:var(--off-bg)}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1100px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}.muted{color:var(--muted)}.small{font-size:12px}
+.cat td{background:var(--bg);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.filters button{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:4px 12px;cursor:pointer;font:inherit;font-size:13px}
+.filters button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr));gap:16px}
+ul.log{list-style:none;margin:0;padding:0;max-height:420px;overflow:auto}ul.log li{padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+code{font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Trading Team</h1>
+  <p>50 specialists + coordinator · <strong>paper trading only</strong> · every proposal passes the independent risk gateway · <span id="updated" class="muted"></span></p>
+</header>
+<main>
+  <section class="cards" id="cards"></section>
+  <section class="panel">
+    <h2>Specialists</h2>
+    <div class="filters" id="filters"></div>
+    <div class="scroll"><table>
+      <thead><tr><th>#</th><th>Agent</th><th>Online</th><th>Capability</th><th>Current task</th><th>Latest analysis</th>
+      <th>Signals proposed</th><th>Errors</th><th>Performance</th><th>Risk approvals</th></tr></thead>
+      <tbody id="agents"></tbody>
+    </table></div>
+  </section>
+  <section class="grid2">
+    <div class="panel"><h2>Risk gateway &amp; paper portfolio</h2><div id="gateway"></div></div>
+    <div class="panel"><h2>Integrations</h2><div id="integrations"></div></div>
+  </section>
+  <section class="panel"><h2>Decision log (latest first)</h2><ul class="log" id="decisions"></ul></section>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let filter="all", last=null;
+const capBadge={functional:"ok",partial:"warn",needs_integration:"off"};
+function statusBadge(a){
+  if(a.status==="running") return '<span class="badge info">running</span>';
+  if(a.status==="error") return '<span class="badge bad">error</span>';
+  if(!a.online) return '<span class="badge off">offline</span>';
+  return '<span class="badge ok">online</span>';
+}
+function render(d){
+  last=d;
+  const ag=d.agents, on=ag.filter(a=>a.online&&a.status!=="error").length;
+  const sig=ag.reduce((n,a)=>n+(a.signals?.length||0),0), err=ag.filter(a=>a.status==="error").length;
+  const appr=ag.reduce((n,a)=>n+a.risk.approved,0), rej=ag.reduce((n,a)=>n+a.risk.rejected,0);
+  const pf=d.portfolio, gw=d.gateway;
+  $("#cards").innerHTML=[
+    ["Online",`${on}/50`],["Needs integration",ag.filter(a=>a.capability==="needs_integration").length],
+    ["Errors",err],["Signals (latest)",sig],["Gateway",gw.ok?(gw.mode==="paper"?"paper ✓":"?"):"DOWN"],
+    ["Approved / rejected",`${appr} / ${rej}`],["Paper equity",pf?pf.equity.toFixed(2):"–"],
+    ["Verification",d.verification?(d.verification.passed?"PASS":"FAIL"):"not run"]
+  ].map(([k,v])=>`<div class="card"><span>${k}</span><b>${esc(v)}</b></div>`).join("");
+  const cats=["all",...d.categories];
+  $("#filters").innerHTML=cats.map(c=>`<button aria-pressed="${c===filter}" data-c="${esc(c)}">${c==="all"?"All 50":esc(c)}</button>`).join("");
+  document.querySelectorAll("#filters button").forEach(b=>b.onclick=()=>{filter=b.dataset.c;render(last)});
+  let rows="",cur=null;
+  for(const a of ag){
+    if(filter!=="all"&&a.category!==filter) continue;
+    if(a.category!==cur){cur=a.category;rows+=`<tr class="cat"><td colspan="10">${esc(cur)}</td></tr>`}
+    const p=a.performance, r=a.risk;
+    const sigs=(a.signals||[]).map(s=>`${esc(s.side)} ${esc(s.pair)} <span class="muted">(${(+s.confidence).toFixed(2)})</span>`).join("<br>")||'<span class="muted">–</span>';
+    const errs=(a.errors||[]).slice(-2).map(e=>`<span class="badge bad">${esc(e.error).slice(0,80)}</span>`).join("<br>")||'<span class="muted">–</span>';
+    rows+=`<tr><td class="num">${a.number}</td><td><strong>${esc(a.name)}</strong><br><code class="muted">${esc(a.id)}</code></td>
+      <td>${statusBadge(a)}</td><td><span class="badge ${capBadge[a.capability]}">${esc(a.capability.replace("_"," "))}</span>${a.gap?`<div class="small muted">${esc(a.gap)}</div>`:""}</td>
+      <td class="small">${esc(a.current_task)||'<span class="muted">idle</span>'}</td>
+      <td class="small">${esc(a.latest_analysis)||'<span class="muted">not run yet</span>'}</td>
+      <td class="small">${sigs}</td><td class="small">${errs}</td>
+      <td class="num small">${p.runs} runs<br>${p.runs?Math.round((p.success_rate||0)*100)+"% ok":""} · ${p.avg_ms} ms</td>
+      <td class="small">${r.submitted?`<span class="badge ok">${r.approved} ✓</span> <span class="badge bad">${r.rejected} ✗</span><div class="muted">${esc(r.last).slice(0,90)}</div>`:'<span class="muted">none submitted</span>'}</td></tr>`;
+  }
+  $("#agents").innerHTML=rows;
+  let g=`<p>${gw.ok?'<span class="badge ok">reachable</span>':'<span class="badge bad">unreachable – proposals fail closed</span>'}
+    mode <strong>${esc(gw.mode||"?")}</strong> · live trading <strong>${gw.live_trading===false?"disabled":"?"}</strong>
+    · prices ${esc(gw.price_source||"?")}</p>`;
+  if(pf){
+    g+=`<p class="num">Equity ${pf.equity.toFixed(2)} · cash ${pf.cash.toFixed(2)} · exposure ${pf.exposure.toFixed(2)} ·
+      today ${(pf.daily_pnl_pct*100).toFixed(2)}% · drawdown ${(pf.drawdown_pct*100).toFixed(2)}%</p>`;
+    const pos=Object.entries(pf.positions||{});
+    g+=pos.length?`<table style="min-width:0"><tr><th>Pair</th><th>Strategy</th><th>Entry</th><th>Stop</th><th>P&amp;L</th></tr>${pos.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v.strategy)}</td><td class="num">${(+v.entry_price).toPrecision(6)}</td><td class="num">${v.stop_loss?(+v.stop_loss).toPrecision(6):"–"}</td><td class="num">${(pf.unrealised?.[k]?.pnl??0).toFixed(2)}</td></tr>`).join("")}</table>`:'<p class="muted">No open paper positions.</p>';
+  }
+  $("#gateway").innerHTML=g;
+  $("#integrations").innerHTML="<ul class='log'>"+d.integrations.map(i=>`<li><span class="badge ${i.installed?"ok":"off"}">${i.installed?"installed":"not installed"}</span> <strong>${esc(i.name)}</strong> <span class="muted small">→ ${i.used_by.length} agent(s)</span></li>`).join("")+"</ul>";
+  $("#decisions").innerHTML=d.decisions.map(x=>{
+    let detail="";
+    if(x.type==="gateway_submission") detail=`${esc(x.side)} ${esc(x.pair)} (${esc(x.strategy)}) → <span class="badge ${x.gateway?.approved?"ok":"bad"}">${x.gateway?.approved?"APPROVED":"REJECTED"}</span> ${esc((x.gateway?.reasons||[]).join("; "))}`;
+    else if(x.type==="proposal_withheld") detail=`${esc(x.side)} ${esc(x.pair)} (${esc(x.strategy)}) withheld: ${esc((x.reasons||[]).join("; "))}`;
+    else if(x.type==="strategy_review") detail=`${esc(x.pair)}: `+Object.entries(x.verdicts||{}).map(([k,v])=>`${esc(k)} <span class="badge ${v.verdict==="APPROVE"?"ok":"bad"}">${v.verdict}</span>`).join(" ");
+    else if(x.type==="compare_findings") detail=`${esc(x.pair)} conflict=${x.conflict} views=${esc(JSON.stringify(x.signal_views))}`;
+    else detail=esc(x.pair||x.workflow||x.cycle_id||"");
+    return `<li><span class="muted small">${esc(x.ts)}</span> <strong>${esc(x.type)}</strong> ${detail}</li>`}).join("")||'<li class="muted">No decisions yet.</li>';
+  $("#updated").textContent="updated "+new Date().toLocaleTimeString();
+}
+async function tick(){try{render(await (await fetch("api/state",{cache:"no-store"})).json())}catch(e){$("#updated").textContent="dashboard API unreachable"}}
+tick();setInterval(tick,5000);
+</script>
+</body>
+</html>

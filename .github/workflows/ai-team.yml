@@ -1,0 +1,81 @@
+name: AI trading team
+
+on:
+  pull_request:
+    paths:
+      - "ai_team/**"
+      - "risk_gateway/**"
+      - ".claude/**"
+      - "easy-start/**"
+      - ".github/workflows/ai-team.yml"
+  push:
+    branches:
+      - develop
+      - "claude/**"
+    paths:
+      - "ai_team/**"
+      - "risk_gateway/**"
+      - ".claude/**"
+      - "easy-start/**"
+      - ".github/workflows/ai-team.yml"
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}"
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  ai-team:
+    name: "Agents, risk gateway and dashboard"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 🐍
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install pandas numpy pytest langgraph "ruff==0.17.2"
+
+      - name: Ruff
+        run: |
+          ruff check --output-format=github ai_team risk_gateway easy-start
+          ruff format --check ai_team risk_gateway easy-start
+
+      - name: Agent files are up to date with specs
+        run: |
+          python -m ai_team.generate_agents
+          git diff --exit-code -- .claude/agents
+
+      - name: Unit and integration tests
+        run: |
+          python -m pytest -c ai_team/pytest.ini --rootdir . ai_team/tests -q -p no:cacheprovider
+
+      - name: Verify all 50 agents (offline, synthetic data, temporary paper gateway)
+        run: |
+          python -m ai_team.cli verify
+
+      - name: Paper-only guard
+        run: |
+          python - <<'PY'
+          import json
+          limits = json.load(open("risk_gateway/limits.json"))
+          assert limits["mode"] == "paper", "risk gateway must stay paper-only"
+          cfg = json.load(open("easy-start/tools/bot_settings.template.json"))
+          assert cfg["dry_run"] is True, "easy-start template must stay in dry-run"
+          print("paper-only guard OK")
+          PY
+
+      - name: Dashboard serves state
+        run: |
+          python -m risk_gateway.server --port 8790 --data synthetic &
+          python -m ai_team.dashboard.server --port 8800 &
+          python -m ai_team.dashboard.smoke --timeout 60

@@ -1,0 +1,21 @@
+---
+# Easy start: bot + web platform (FreqUI) in a single container.
+# Started by start.sh / start.ps1, which create user_data/bot_settings.json first.
+services:
+  bot:
+    image: freqtradeorg/freqtrade:stable
+    restart: unless-stopped
+    container_name: trading-bot-usor
+    volumes:
+      - "./user_data:/freqtrade/user_data"
+      - "./tools:/easy-tools:ro"
+    # By default the web platform is only reachable from this computer.
+    # "bot telefon" sets BIND_IP=0.0.0.0 in .env so phones on the same Wi-Fi can connect.
+    ports:
+      - "${BIND_IP:-127.0.0.1}:8080:8080"
+    command: >
+      trade
+      --logfile /freqtrade/user_data/logs/bot.log
+      --db-url sqlite:////freqtrade/user_data/trades.sqlite
+      --config /freqtrade/user_data/bot_settings.json
+      --strategy StrategieUsoara
