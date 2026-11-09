@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m ai_team.cli:*)",
+      "Bash(python3 -m ai_team.cli:*)",
+      "Bash(python -m pytest ai_team/tests:*)",
+      "Read(/ai_team/**)",
+      "Read(/.claude/agents/**)"
+    ],
+    "deny": [
+      "Edit(/risk_gateway/**)",
+      "Edit(risk_gateway/**)",
+      "Edit(/.claude/settings.json)",
+      "Read(/easy-start/user_data/bot_settings.json)",
+      "Read(**/bot_settings.json)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*secret*)",
+      "Read(**/config_private*.json)",
+      "Bash(docker:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(git push:*)",
+      "Bash(python -m risk_gateway.server:*)"
+    ]
+  }
+}

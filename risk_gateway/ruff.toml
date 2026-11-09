@@ -1,0 +1,19 @@
+# Extends the repository lint rules for this self-contained package.
+extend = "../pyproject.toml"
+line-length = 110
+
+[lint]
+# Relative imports are intentional inside this package; complexity is capped higher
+# for the gateway's explicit, linear rule list.
+extend-ignore = ["TID252"]
+
+[lint.mccabe]
+max-complexity = 25
+
+[lint.per-file-ignores]
+"tests/*" = ["S101"]
+# Module-level invariant check, not runtime validation.
+"generate_agents.py" = ["S101"]
+# Fixed https Kraken endpoint / local gateway URL, not user-controlled schemes.
+"data.py" = ["S310"]
+"gateway_client.py" = ["S310"]
