@@ -44,7 +44,18 @@ ai_team/system.sh status    # processes, paper mode, agents online, Kraken feed 
 ai_team/system.sh logs      # follow the runner log
 ai_team/system.sh stop      # stops dashboard, runner and gateway
 ai_team/system.sh verify    # test suite + 50-agent verification
+ai_team/system.sh telefon   # open the dashboard to phones on the same Wi-Fi (no password)
+ai_team/system.sh local     # back to this computer only (default)
 ```
+
+### From your phone
+
+Run `ai_team/system.sh telefon` on the computer. It prints an address such as
+`http://192.168.1.15:8800`; open it on a phone connected to the **same Wi-Fi**. There is no
+password, so anyone on that Wi-Fi can **see** the dashboard. The dashboard is read-only and
+cannot place orders or change anything, and the risk gateway stays on 127.0.0.1. Do not
+forward port 8800 on your router. On Windows, allow Python through the firewall for private
+networks if the page does not load. `ai_team/system.sh local` closes it again.
 
 Dashboard: **http://127.0.0.1:8800**. It updates live via Server-Sent Events and falls back to
 polling every 5 s.
