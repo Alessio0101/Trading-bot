@@ -24,13 +24,16 @@ $StartupLink = Join-Path ([Environment]::GetFolderPath("Startup")) "AI-Trading-D
 New-Item -ItemType Directory -Force -Path $Pids | Out-Null
 
 function Get-BasePython {
-    # Prefer the "py" launcher; "python" may be the Microsoft Store placeholder.
-    foreach ($candidate in @("py", "python")) {
-        if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
+    # Returns the arguments that run a suitable Python. Versions with ready-made packages for
+    # pandas, numpy and scikit-learn (3.13, 3.12) are preferred over a newer default, which may
+    # still lack them. "python" may be the Microsoft Store placeholder, so it is checked last.
+    $candidates = @(@("py", "-3.13"), @("py", "-3.12"), @("py", "-3"), @("python"))
+    foreach ($c in $candidates) {
+        if (-not (Get-Command $c[0] -ErrorAction SilentlyContinue)) { continue }
         try {
-            if ($candidate -eq "py") { $v = & py -3 --version 2>&1 } else { $v = & python --version 2>&1 }
+            if ($c.Count -eq 2) { $v = & $c[0] $c[1] --version 2>&1 } else { $v = & $c[0] --version 2>&1 }
         } catch { continue }
-        if ("$v" -match "Python 3\.(1[1-9]|[2-9][0-9])") { return $candidate }
+        if ("$v" -match "Python 3\.(1[1-9]|[2-9][0-9])") { return ,$c }
     }
     return $null
 }
@@ -42,12 +45,12 @@ function Initialize-Venv {
             Write-Host ""
             Write-Host "Python 3.11 sau mai nou nu este instalat." -ForegroundColor Red
             Write-Host "1. Deschide https://www.python.org/downloads/ si instaleaza Python."
-            Write-Host "2. IMPORTANT: bifeaza 'Add python.exe to PATH' la instalare."
+            Write-Host "2. Apoi, intr-o fereastra cmd, scrie: py install 3.13"
             Write-Host "3. Porneste din nou acest fisier."
             exit 1
         }
-        Write-Host "Creez mediul Python (.venv) ..."
-        if ($base -eq "py") { & py -3 -m venv $Venv } else { & python -m venv $Venv }
+        Write-Host "Creez mediul Python (.venv) cu: $($base -join ' ') ..."
+        if ($base.Count -eq 2) { & $base[0] $base[1] -m venv $Venv } else { & $base[0] -m venv $Venv }
         if ($LASTEXITCODE -ne 0) { throw "Nu am putut crea .venv" }
     }
     Write-Host "Verific/instalez pachetele (prima data dureaza cateva minute) ..."
