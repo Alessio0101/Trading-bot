@@ -38,7 +38,23 @@ function Get-BasePython {
     return $null
 }
 
+function Get-VenvVersion {
+    if (-not (Test-Path $Py)) { return $null }
+    try { return ("" + (& $Py -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>&1)).Trim() } catch { return $null }
+}
+
 function Initialize-Venv {
+    # A .venv made with a Python that pandas/numpy/scikit-learn ship no packages for yet
+    # (e.g. 3.15) cannot install them on Windows without a compiler: rebuild it when a
+    # supported Python (3.12 or 3.13) is available.
+    $venvVersion = Get-VenvVersion
+    if ($venvVersion -and $venvVersion -notin @("3.12", "3.13")) {
+        $base = Get-BasePython
+        if ($base -and ($base -join " ") -match "-3\.1[23]$") {
+            Write-Host "Mediul .venv foloseste Python $venvVersion (prea nou pentru unele pachete). Il refac cu $($base -join ' ') ..."
+            Remove-Item -Recurse -Force $Venv
+        }
+    }
     if (-not (Test-Path $Py)) {
         $base = Get-BasePython
         if (-not $base) {
@@ -55,7 +71,13 @@ function Initialize-Venv {
     }
     Write-Host "Verific/instalez pachetele (prima data dureaza cateva minute) ..."
     & $Py -m pip install -q --disable-pip-version-check -r (Join-Path $Root "ai_team\requirements.txt")
-    if ($LASTEXITCODE -ne 0) { throw "Instalarea pachetelor a esuat" }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "Instalarea pachetelor a esuat (Python $(Get-VenvVersion))." -ForegroundColor Red
+        Write-Host "Instaleaza Python 3.13: deschide cmd si scrie  py install 3.13"
+        Write-Host "Apoi sterge folderul .venv din acest folder si porneste din nou fisierul."
+        throw "Instalarea pachetelor a esuat"
+    }
 }
 
 function Test-Running {
