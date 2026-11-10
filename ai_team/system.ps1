@@ -43,6 +43,13 @@ function Get-VenvVersion {
     try { return ("" + (& $Py -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>&1)).Trim() } catch { return $null }
 }
 
+function Get-FreeGb {
+    try {
+        $drive = Get-PSDrive -Name $Root.Substring(0, 1) -ErrorAction Stop
+        return [math]::Round($drive.Free / 1GB, 1)
+    } catch { return $null }
+}
+
 function Initialize-Venv {
     # A .venv made with a Python that pandas/numpy/scikit-learn ship no packages for yet
     # (e.g. 3.15) cannot install them on Windows without a compiler: rebuild it when a
@@ -69,13 +76,27 @@ function Initialize-Venv {
         if ($base.Count -eq 2) { & $base[0] $base[1] -m venv $Venv } else { & $base[0] -m venv $Venv }
         if ($LASTEXITCODE -ne 0) { throw "Nu am putut crea .venv" }
     }
-    Write-Host "Verific/instalez pachetele (prima data dureaza cateva minute) ..."
-    & $Py -m pip install -q --disable-pip-version-check -r (Join-Path $Root "ai_team\requirements.txt")
-    if ($LASTEXITCODE -ne 0) {
+    $freeGb = Get-FreeGb
+    if ($null -ne $freeGb -and $freeGb -lt 2) {
         Write-Host ""
-        Write-Host "Instalarea pachetelor a esuat (Python $(Get-VenvVersion))." -ForegroundColor Red
-        Write-Host "Instaleaza Python 3.13: deschide cmd si scrie  py install 3.13"
-        Write-Host "Apoi sterge folderul .venv din acest folder si porneste din nou fisierul."
+        Write-Host "Nu este destul spatiu pe disc: liber $freeGb GB, trebuie cel putin 2 GB." -ForegroundColor Red
+        Write-Host "Elibereaza spatiu (Cos de gunoi, Descarcari, foldere Trading-bot vechi) si porneste din nou fisierul."
+        throw "Spatiu insuficient pe disc"
+    }
+    Write-Host "Verific/instalez pachetele (prima data dureaza cateva minute) ..."
+    # --no-cache-dir: do not keep a second copy of every package on a disk that may be nearly full.
+    & $Py -m pip install -q --disable-pip-version-check --no-cache-dir -r (Join-Path $Root "ai_team\requirements.txt")
+    if ($LASTEXITCODE -ne 0) {
+        $ver = Get-VenvVersion
+        Write-Host ""
+        Write-Host "Instalarea pachetelor a esuat (Python $ver, liber pe disc: $(Get-FreeGb) GB)." -ForegroundColor Red
+        if ($ver -in @("3.12", "3.13")) {
+            Write-Host "Python este bun. Cauza este de obicei spatiul pe disc (No space left on device) sau internetul."
+            Write-Host "Elibereaza cel putin 2 GB, sterge folderul .venv din acest folder si porneste din nou fisierul."
+        } else {
+            Write-Host "Instaleaza Python 3.13: deschide cmd si scrie  py install 3.13"
+            Write-Host "Apoi sterge folderul .venv din acest folder si porneste din nou fisierul."
+        }
         throw "Instalarea pachetelor a esuat"
     }
 }

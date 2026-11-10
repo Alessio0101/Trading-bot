@@ -25,7 +25,7 @@ ensure_venv() {
         echo "Creating virtualenv in .venv ..."
         python3 -m venv "$VENV"
     fi
-    "$PY" -m pip install -q --disable-pip-version-check -r ai_team/requirements.txt
+    "$PY" -m pip install -q --disable-pip-version-check --no-cache-dir -r ai_team/requirements.txt
 }
 
 running() { [ -f "$PIDS/supervisor.pid" ] && kill -0 "$(cat "$PIDS/supervisor.pid")" 2>/dev/null; }
