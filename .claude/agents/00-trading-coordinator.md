@@ -100,7 +100,7 @@ whether it may be (paper) traded. You can never bypass it.
 | 47 | `model-monitoring-specialist` | Algorithmic and Automated Trading | functional |
 | 48 | `performance-attribution-analyst` | Algorithmic and Automated Trading | functional |
 | 49 | `system-health-monitor` | Algorithmic and Automated Trading | functional |
-| 50 | `reinforcement-learning-researcher` | Algorithmic and Automated Trading | needs_integration |
+| 50 | `reinforcement-learning-researcher` | Algorithmic and Automated Trading | partial |
 
 Agents marked `needs_integration` must not be asked for results they cannot
 produce; report the missing integration instead.

@@ -26,10 +26,10 @@ from typing import Any
 
 from .bus import MessageBus
 from .coordinator import Coordinator, build_langgraph
-from .data import KrakenPublicData, MarketData, SyntheticMarketData
+from .data import TIMEFRAME_MINUTES, KrakenPublicData, MarketData, SyntheticMarketData
 from .gateway_client import GatewayClient
 from .models import utcnow
-from .runtime import DEFAULT_UNIVERSE
+from .runtime import DEFAULT_TIMEFRAME, DEFAULT_UNIVERSE
 from .specs import SPECS
 from .state import DEFAULT_STATE_DIR, StateStore
 
@@ -74,7 +74,7 @@ class Runner:
         interval: float = 300,
         market_interval: float = 10,
         pairs: list[str] | None = None,
-        timeframe: str = "1h",
+        timeframe: str = DEFAULT_TIMEFRAME,
         use_langgraph: bool = True,
     ) -> None:
         self.data_kind = data_kind
@@ -282,7 +282,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--interval", type=float, default=300, help="seconds between coordinator cycles")
     ap.add_argument("--market-interval", type=float, default=10, help="seconds between price updates")
     ap.add_argument("--pairs", default=",".join(DEFAULT_UNIVERSE))
-    ap.add_argument("--timeframe", default="1h")
+    ap.add_argument(
+        "--timeframe",
+        default=DEFAULT_TIMEFRAME,
+        choices=sorted(TIMEFRAME_MINUTES),
+        help="bar size the strategies trade on (default 4h)",
+    )
     ap.add_argument("--no-langgraph", action="store_true")
     ap.add_argument("--once", action="store_true", help="run one market poll and one cycle, then exit")
     a = ap.parse_args(argv)

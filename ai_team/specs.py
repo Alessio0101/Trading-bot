@@ -855,9 +855,10 @@ SPECS: list[Spec] = [
         ["feature matrix", "simulator"],
         ["policy evaluation report"],
         A + "reinforcement_learning_researcher",
-        "needs_integration",
+        "partial",
         integrations=["RD-Agent", "Qlib", "NautilusTrader"],
-        gap="No RL framework/simulator installed (freqtrade freqai-rl, Qlib RL or NautilusTrader).",
+        gap="Research only: tabular Q-learning in a built-in cost-aware simulator; no deep-RL "
+        "framework (freqtrade freqai-rl, Qlib RL or NautilusTrader) and no trade signals.",
     ),
 ]
 

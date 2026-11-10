@@ -48,6 +48,15 @@ ai_team/system.sh telefon   # open the dashboard to phones on the same Wi-Fi (no
 ai_team/system.sh local     # back to this computer only (default)
 ```
 
+### Timeframe
+
+Strategies trade **4-hour bars** (`--timeframe` on the runner and supervisor; `1h` and `1d` also
+work). Kraken charges up to 0.26 % per side, so a round trip costs about 0.6 % with slippage. On
+1-hour bars every strategy lost money after those costs and the independent reviewer rejected all
+of them. On 4-hour bars some strategies pass the same, unchanged review standards. Passing the
+review does not guarantee profits: a paper trade still needs a live signal, both reviews and every
+gateway limit.
+
 ### Running non-stop
 
 `ai_team/system.sh` and `ai_team/system.ps1` start one **supervisor** (`python -m ai_team.supervisor`).
@@ -88,7 +97,7 @@ polling every 5 s.
 | Process | Port | What it does |
 |---------|------|--------------|
 | `risk_gateway.server` | 8790 | Independent paper broker. Prices every decision from its own Kraken ticker, fails closed on stale prices, executes stop-loss / take-profit exits every 15 s |
-| `ai_team.runner` | – | Kraken tickers every 10 s (`state/market.json`). Every 5 min the LangGraph coordinator invokes all 50 agents for each pair and submits approved-for-review proposals to the gateway |
+| `ai_team.runner` | – | Kraken tickers every 10 s (`state/market.json`). Every 5 min the LangGraph coordinator invokes all 50 agents for each pair on 4-hour bars and submits approved-for-review proposals to the gateway |
 | `ai_team.dashboard.server` | 8800 | Read-only web UI built from the runner's state files and the gateway API |
 
 Environment overrides: `AI_TEAM_DATA=synthetic` (offline), `AI_TEAM_INTERVAL=300`,
@@ -183,16 +192,18 @@ These need no account and no key. Headlines and other feed text are treated as d
 **observed** results with the declared status. See `VERIFICATION.md`:
 
 - **41 functional**: real computations on market data and the public feeds.
-- **8 partial** (they work, with a stated limitation):
+- **9 partial** (they work, with a stated limitation):
   - sentiment-analyst and event-driven-specialist: lexicon scoring of headlines;
   - macro-economic-analyst: crypto-wide data only, no rates or CPI;
   - scalping-strategist: REST polling;
   - pairs-trading-strategist: long leg only;
   - order-routing-specialist: one paper venue;
-  - arbitrage-strategist and options-strategist: analysis only, and options cover BTC/ETH only.
-- **1 needs an integration**: reinforcement-learning-researcher (no RL framework or simulator).
+  - arbitrage-strategist and options-strategist: analysis only, and options cover BTC/ETH only;
+  - reinforcement-learning-researcher: research only. It trains tabular Q-learning in a built-in,
+    cost-aware simulator and scores it out of sample against buy-and-hold. There is no deep-RL
+    framework, and it emits no trade signals.
 
-On live data, 49 of 50 are online. A partly supported agent counts as online when it succeeded
+On live data, all 50 are online. A partly supported agent counts as online when it succeeded
 on at least one pair in the latest cycle.
 
 External frameworks: LangGraph runs the coordinator graph and scikit-learn the ML

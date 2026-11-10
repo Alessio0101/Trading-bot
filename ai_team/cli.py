@@ -1,7 +1,7 @@
 """
 Command line entry point used by the Claude Code agents.
 
-  python -m ai_team.cli agent <agent-id> [--pair BTC/USDT] [--timeframe 1h] [--param k=v]
+  python -m ai_team.cli agent <agent-id> [--pair BTC/USDT] [--timeframe 4h] [--param k=v]
   python -m ai_team.cli workflow <name> [--pair ...]
   python -m ai_team.cli cycle [--pairs BTC/USDT,ETH/USDT] [--langgraph] [--no-submit]
   python -m ai_team.cli status | integrations | verify | list
@@ -21,7 +21,7 @@ from .data import KrakenPublicData, SyntheticMarketData
 from .gateway_client import GatewayClient
 from .integrations import all_status
 from .models import Task
-from .runtime import AgentContext, run_specialist
+from .runtime import DEFAULT_TIMEFRAME, AgentContext, run_specialist
 from .specs import BY_ID, SPECS, WORKFLOWS
 from .state import StateStore
 
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("agent")
     a.add_argument("agent_id", choices=sorted(BY_ID))
     a.add_argument("--pair", default="BTC/USDT")
-    a.add_argument("--timeframe", default="1h")
+    a.add_argument("--timeframe", default=DEFAULT_TIMEFRAME)
     a.add_argument("--param", action="append")
     a.add_argument(
         "--upstream",
@@ -60,11 +60,11 @@ def main(argv: list[str] | None = None) -> int:
     w = sub.add_parser("workflow")
     w.add_argument("name", choices=sorted(WORKFLOWS))
     w.add_argument("--pair", default="BTC/USDT")
-    w.add_argument("--timeframe", default="1h")
+    w.add_argument("--timeframe", default=DEFAULT_TIMEFRAME)
     w.add_argument("--param", action="append")
     c = sub.add_parser("cycle")
     c.add_argument("--pairs", default="BTC/USDT,ETH/USDT,SOL/USDT")
-    c.add_argument("--timeframe", default="1h")
+    c.add_argument("--timeframe", default=DEFAULT_TIMEFRAME)
     c.add_argument("--headline", action="append")
     c.add_argument("--langgraph", action="store_true")
     c.add_argument("--no-submit", action="store_true")

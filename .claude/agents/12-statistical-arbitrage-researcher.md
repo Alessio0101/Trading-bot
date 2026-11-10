@@ -31,7 +31,7 @@ Run your implementation through the shared runtime (it handles data access,
 timing, error capture and dashboard state):
 
 ```bash
-python -m ai_team.cli agent statistical-arbitrage-researcher --pair BTC/USDT --timeframe 1h
+python -m ai_team.cli agent statistical-arbitrage-researcher --pair BTC/USDT --timeframe 4h
 ```
 
 Add `--param key=value` for task parameters and `--data synthetic` when offline.

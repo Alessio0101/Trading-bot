@@ -15,6 +15,10 @@ from .models import Report, Signal, Task, utcnow
 from .specs import BY_ID, Spec
 
 
+# Strategies trade 4-hour bars by default. Kraken charges up to 0.26 % per side, so a
+# round trip costs about 0.6 % with slippage; on 1-hour bars the typical move is too
+# small to cover that and every strategy failed the independent review.
+DEFAULT_TIMEFRAME = "4h"
 DEFAULT_UNIVERSE = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT"]
 
 

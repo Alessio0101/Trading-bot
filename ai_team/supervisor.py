@@ -25,7 +25,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from .data import TIMEFRAME_MINUTES
 from .models import utcnow
+from .runtime import DEFAULT_TIMEFRAME
 from .state import DEFAULT_STATE_DIR
 
 
@@ -113,6 +115,8 @@ def build_children(a: argparse.Namespace, state_dir: Path) -> list[Child]:
                 a.data,
                 "--interval",
                 str(a.interval),
+                "--timeframe",
+                a.timeframe,
                 "--gateway",
                 gw,
                 "--state-dir",
@@ -143,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ai_team.supervisor")
     ap.add_argument("--data", choices=["kraken", "synthetic"], default="kraken")
     ap.add_argument("--interval", type=float, default=300)
+    ap.add_argument("--timeframe", default=DEFAULT_TIMEFRAME, choices=sorted(TIMEFRAME_MINUTES))
     ap.add_argument("--gateway-port", type=int, default=8790)
     ap.add_argument("--dashboard-port", type=int, default=8800)
     ap.add_argument(

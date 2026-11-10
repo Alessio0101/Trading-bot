@@ -228,6 +228,40 @@ class TestRepairedAgents:
         assert m["folds"] >= 3 and 0 <= m["p_up"] <= 1
         assert m["verdict"] in ("edge", "no reliable edge")
 
+    def test_rl_researcher_scores_policy_out_of_sample(self, market):
+        r = run("reinforcement-learning-researcher", market)
+        assert r.status == "ok", r.summary
+        m = r.metrics
+        assert m["algorithm"] == "tabular Q-learning" and m["research_only"] is True
+        assert m["out_of_sample"]["bars"] == 720 - int(720 * 0.7)
+        oos, hold = m["out_of_sample"], m["baseline_buy_hold"]
+        assert m["beats_buy_hold"] == (oos["total_return"] > hold["total_return"])
+        assert set(m["learned_policy_when_flat"].values()) <= {"long", "flat"}
+        assert r.signals == []  # research only: never proposes trades
+        again = run("reinforcement-learning-researcher", market).metrics
+        assert again["out_of_sample"] == m["out_of_sample"]  # seeded, reproducible
+
+
+def test_runner_and_supervisor_default_to_4h_bars():
+    from ai_team import runner, supervisor
+    from ai_team.runtime import DEFAULT_TIMEFRAME
+
+    assert DEFAULT_TIMEFRAME == "4h"
+    assert runner.Runner.__init__.__defaults__ is not None
+    assert "4h" in runner.Runner.__init__.__defaults__
+    import argparse
+
+    a = argparse.Namespace(
+        gateway_port=1,
+        dashboard_port=2,
+        dashboard_host="127.0.0.1",
+        data="synthetic",
+        interval=5,
+        timeframe="4h",
+    )
+    runner_args = next(c.args for c in supervisor.build_children(a, Path()) if c.name == "runner")
+    assert runner_args[runner_args.index("--timeframe") + 1] == "4h"
+
 
 def test_trim_jsonl(tmp_path):
     from ai_team.runner import trim_jsonl

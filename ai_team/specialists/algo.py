@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 
 from .. import indicators as ind
-from ..runtime import AgentContext, HandlerResult, NeedsIntegration
-from .quant import backtest
+from ..runtime import AgentContext, HandlerResult
+from .quant import FEE, SLIPPAGE, backtest
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -199,7 +199,78 @@ def system_health_monitor(ctx: AgentContext) -> HandlerResult:
     )
 
 
+RL_EPISODES = 60
+RL_ALPHA, RL_GAMMA = 0.1, 0.9
+RL_EPSILON = 0.1
+
+
+def _rl_states(df: pd.DataFrame) -> np.ndarray:
+    """Discrete market state: EMA 20/50 trend (2) x RSI band (3) = 6 states."""
+    c = df["close"]
+    trend = (ind.ema(c, 20) > ind.ema(c, 50)).astype(int).to_numpy()
+    band = np.digitize(ind.rsi(c, 14).fillna(50).to_numpy(), [35.0, 65.0])
+    return trend * 3 + band
+
+
 def reinforcement_learning_researcher(ctx: AgentContext) -> HandlerResult:
-    raise NeedsIntegration(
-        "No RL framework/simulator installed (Qlib RL, RD-Agent, NautilusTrader or freqtrade freqai-rl)."
+    """Tabular Q-learning in a built-in, cost-aware simulator (research only, no signals).
+
+    The agent chooses flat (0) or long (1) for the next bar. Its reward is the next
+    bar's return while long, minus fees and slippage whenever the position changes.
+    It trains on the first 70 % of bars and is scored on the unseen final 30 %
+    against buy-and-hold and staying flat.
+    """
+    df = ctx.ohlcv(limit=720)
+    states = _rl_states(df)
+    rets = df["close"].pct_change().shift(-1).fillna(0).to_numpy()  # return earned after acting
+    cost = FEE + SLIPPAGE
+    split = int(len(df) * 0.7)
+    warmup = 50
+    rng = np.random.default_rng(7)
+    q = np.zeros((6, 2, 2))  # state x current position x action
+    for _ in range(RL_EPISODES):
+        pos = 0
+        for t in range(warmup, split - 1):
+            s = states[t]
+            a = int(rng.integers(2)) if rng.random() < RL_EPSILON else int(np.argmax(q[s, pos]))
+            reward = a * rets[t] - cost * abs(a - pos)
+            target = reward + RL_GAMMA * q[states[t + 1], a].max()
+            q[s, pos, a] += RL_ALPHA * (target - q[s, pos, a])
+            pos = a
+
+    def policy(start: int, end: int) -> pd.Series:
+        out, pos = [], 0
+        for t in range(start, end):
+            pos = int(np.argmax(q[states[t], pos]))
+            out.append(float(pos))
+        return pd.Series(out, index=df.index[start:end])
+
+    # backtest() acts on the next bar, matching the reward the agent was trained on.
+    oos = df.iloc[split:]
+    rl = backtest(oos, policy(split, len(df)), ctx.task.timeframe)
+    ins = backtest(df.iloc[warmup:split], policy(warmup, split), ctx.task.timeframe)
+    hold = backtest(oos, pd.Series(1.0, index=oos.index), ctx.task.timeframe)
+    beats_hold = rl["total_return"] > hold["total_return"]
+    beats_flat = rl["total_return"] > 0
+    bands = ("RSI<35", "RSI 35-65", "RSI>65")
+    names = [f"{'up' if i // 3 else 'down'}-trend/{bands[i % 3]}" for i in range(6)]
+    learned = {names[i]: "long" if q[i, 0, 1] > q[i, 0, 0] else "flat" for i in range(6)}
+    return HandlerResult(
+        f"Q-learning policy OOS return {rl['total_return']:.2%} (Sharpe {rl['sharpe']:.2f}, "
+        f"{rl['trades']} trades) vs buy-and-hold {hold['total_return']:.2%}; "
+        f"{'beats' if beats_hold else 'does not beat'} buy-and-hold, "
+        f"{'beats' if beats_flat else 'does not beat'} staying flat",
+        {
+            "algorithm": "tabular Q-learning",
+            "episodes": RL_EPISODES,
+            "states": 6,
+            "in_sample": ins,
+            "out_of_sample": rl,
+            "baseline_buy_hold": hold,
+            "beats_buy_hold": beats_hold,
+            "beats_flat": beats_flat,
+            "learned_policy_when_flat": learned,
+            "current_state": names[int(states[-1])],
+            "research_only": True,
+        },
     )
