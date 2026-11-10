@@ -70,6 +70,9 @@ def make_handler(gw: RiskGateway):
 
 def serve(port: int, data: str, state_dir: Path, exit_check_interval: float = 0) -> ThreadingHTTPServer:
     gw = RiskGateway(state_dir, PriceSource(data))
+    # Bind first: if the port is taken (another gateway is running), fail before
+    # starting the exit monitor, so two gateways never write the same portfolio.
+    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(gw))
     if exit_check_interval > 0:
 
         def monitor() -> None:
@@ -78,7 +81,7 @@ def serve(port: int, data: str, state_dir: Path, exit_check_interval: float = 0)
                 time.sleep(exit_check_interval)
 
         threading.Thread(target=monitor, name="protective-exits", daemon=True).start()
-    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(gw))
+    return server
 
 
 def main() -> None:

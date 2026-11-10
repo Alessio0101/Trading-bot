@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .data import TIMEFRAME_MINUTES
-from .fsutil import atomic_write_text
+from .fsutil import AlreadyRunning, acquire_instance_lock, atomic_write_text
 from .models import utcnow
 from .runtime import DEFAULT_TIMEFRAME
 from .state import DEFAULT_STATE_DIR
@@ -164,6 +164,15 @@ def main(argv: list[str] | None = None) -> int:
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[handler, logging.StreamHandler()])
 
+    try:
+        # One supervisor per state directory: a second copy (for example a manual start
+        # while the Windows logon start is already running) would run a second gateway
+        # and runner on the same files.
+        instance_lock = acquire_instance_lock(state_dir / "supervisor.lock")
+    except AlreadyRunning:
+        log.warning("another supervisor is already running for %s; exiting", state_dir)
+        return 0
+
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
@@ -219,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError):
             pass
         log.info("supervisor stopped")
+        instance_lock.close()
     return 0
 
 

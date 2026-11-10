@@ -109,18 +109,25 @@ class RiskGateway:
         }
 
     def _save(self) -> None:
-        tmp = self.portfolio_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.portfolio, indent=2), encoding="utf-8")
-        # On Windows the replace fails while another process (e.g. antivirus) briefly
-        # holds the file open, so retry for up to ~5 s before giving up.
-        for attempt in range(100):
-            try:
-                tmp.replace(self.portfolio_file)
-                break
-            except PermissionError:
-                if attempt == 99:
-                    raise
-                time.sleep(0.05)
+        # Unique temporary name per process and thread, so concurrent writers never
+        # replace (and delete) each other's file.
+        tmp = self.portfolio_file.with_name(
+            f"{self.portfolio_file.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
+        try:
+            tmp.write_text(json.dumps(self.portfolio, indent=2), encoding="utf-8")
+            # On Windows the replace fails while another process (e.g. the antivirus)
+            # briefly holds the file open, so retry for up to ~5 s before giving up.
+            for attempt in range(100):
+                try:
+                    tmp.replace(self.portfolio_file)
+                    break
+                except PermissionError:
+                    if attempt == 99:
+                        raise
+                    time.sleep(0.05)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def _log(self, entry: dict) -> None:
         with self.log_file.open("a", encoding="utf-8") as f:

@@ -387,7 +387,7 @@ def test_replace_with_retry_waits_for_a_windows_lock(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "replace", locked_twice)
     fsutil.atomic_write_text(target, "new")
     assert target.read_text() == "new" and calls["n"] == 3
-    assert not (tmp_path / "agents.tmp").exists()
+    assert list(tmp_path.glob("*.tmp")) == []
 
     calls["n"] = -1000  # locked for longer than the retry budget: the error surfaces
     with pytest.raises(PermissionError):
@@ -403,3 +403,52 @@ def test_runner_status_write_failure_is_logged_not_raised(tmp_path, monkeypatch,
     monkeypatch.setattr(runner, "atomic_write_text", always_locked)
     runner.write_json(tmp_path / "runner.json", {"a": 1})
     assert "could not write runner.json" in caplog.text
+
+
+def test_instance_lock_is_exclusive_and_released_on_exit(tmp_path):
+    from ai_team.fsutil import AlreadyRunning, acquire_instance_lock
+
+    lock = tmp_path / "supervisor.lock"
+    probe = (
+        "import sys; from pathlib import Path\n"
+        "from ai_team.fsutil import acquire_instance_lock, AlreadyRunning\n"
+        "try:\n    acquire_instance_lock(Path(sys.argv[1]))\nexcept AlreadyRunning:\n    sys.exit(3)\n"
+    )
+    root = Path(__file__).resolve().parents[2]
+    held = acquire_instance_lock(lock)
+    try:
+        assert lock.read_text() == str(os.getpid())
+        r = subprocess.run([sys.executable, "-c", probe, str(lock)], check=False, cwd=root, timeout=60)
+        assert r.returncode == 3  # another process is refused while we hold it
+    finally:
+        held.close()
+    r = subprocess.run([sys.executable, "-c", probe, str(lock)], check=False, cwd=root, timeout=60)
+    assert r.returncode == 0  # released once the holder lets go
+    with pytest.raises(AlreadyRunning):
+        h1 = acquire_instance_lock(lock)
+        try:
+            acquire_instance_lock(lock)  # flock is per open file: a second handle is refused too
+        finally:
+            h1.close()
+
+
+def test_second_supervisor_exits_without_starting_children(tmp_path):
+    from ai_team.fsutil import acquire_instance_lock
+
+    held = acquire_instance_lock(tmp_path / "supervisor.lock")
+    try:
+        root = Path(__file__).resolve().parents[2]
+        r = subprocess.run(
+            [sys.executable, "-m", "ai_team.supervisor", "--data", "synthetic", "--state-dir", str(tmp_path)],
+            check=False,
+            cwd=root,
+            timeout=60,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        held.close()
+    assert r.returncode == 0
+    assert "another supervisor is already running" in r.stderr
+    assert not (tmp_path / "supervisor.json").exists()
+    assert not list(tmp_path.glob("*.out"))  # no gateway, runner or dashboard was started
