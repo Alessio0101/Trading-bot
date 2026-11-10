@@ -1,9 +1,10 @@
 # Start / stop the AI trading system on Windows (paper trading only).
 #
-#   powershell -ExecutionPolicy Bypass -File ai_team\system.ps1 start|stop|status|telefon|local
+#   powershell -ExecutionPolicy Bypass -File ai_team\system.ps1 start|stop|status|telefon|local|autostart|fara-autostart
 #
-# Same behaviour as ai_team/system.sh: risk gateway (127.0.0.1:8790), runner, dashboard (:8800).
-# "telefon" opens only the read-only dashboard to the local Wi-Fi; the gateway stays on 127.0.0.1.
+# One supervisor process (ai_team.supervisor) keeps the risk gateway (127.0.0.1:8790), the runner
+# and the dashboard (:8800) running and restarts any of them that stops. "telefon" opens only the
+# read-only dashboard to the local Wi-Fi; the gateway always stays on 127.0.0.1.
 # Written for Windows PowerShell 5.1 (no PowerShell 7-only syntax).
 param([string]$Command = "")
 
@@ -13,10 +14,13 @@ Set-Location $Root
 $State = Join-Path $Root "ai_team\state"
 $Pids = Join-Path $State "pids"
 $HostFile = Join-Path $State "dashboard.host"
+$StopFile = Join-Path $State "supervisor.stop"
+$SupPid = Join-Path $Pids "supervisor.pid"
 $Venv = Join-Path $Root ".venv"
 $Py = Join-Path $Venv "Scripts\python.exe"
-$GatewayPort = 8790
+$Pyw = Join-Path $Venv "Scripts\pythonw.exe"
 $DashboardPort = 8800
+$StartupLink = Join-Path ([Environment]::GetFolderPath("Startup")) "AI-Trading-Desk.vbs"
 New-Item -ItemType Directory -Force -Path $Pids | Out-Null
 
 function Get-BasePython {
@@ -51,39 +55,14 @@ function Initialize-Venv {
     if ($LASTEXITCODE -ne 0) { throw "Instalarea pachetelor a esuat" }
 }
 
-function Test-Running([string]$Name) {
-    $pidFile = Join-Path $Pids "$Name.pid"
-    if (-not (Test-Path $pidFile)) { return $false }
-    $procId = [int](Get-Content $pidFile -Raw)
+function Test-Running {
+    if (-not (Test-Path $SupPid)) { return $false }
+    $procId = [int](Get-Content $SupPid -Raw)
     return [bool](Get-Process -Id $procId -ErrorAction SilentlyContinue)
 }
 
-function Start-One([string]$Name, [string[]]$Arguments) {
-    if (Test-Running $Name) {
-        Write-Host "  $Name ruleaza deja"
-        return
-    }
-    $proc = Start-Process -FilePath $Py -ArgumentList $Arguments -WorkingDirectory $Root `
-        -RedirectStandardOutput (Join-Path $State "$Name.out") `
-        -RedirectStandardError (Join-Path $State "$Name.err") `
-        -WindowStyle Hidden -PassThru
-    Set-Content -Path (Join-Path $Pids "$Name.pid") -Value $proc.Id
-    Write-Host "  $Name pornit (pid $($proc.Id))"
-}
-
-function Stop-One([string]$Name) {
-    $pidFile = Join-Path $Pids "$Name.pid"
-    if (Test-Running $Name) {
-        Stop-Process -Id ([int](Get-Content $pidFile -Raw)) -Force
-        Write-Host "  $Name oprit"
-    } else {
-        Write-Host "  $Name nu rula"
-    }
-    Remove-Item -Force -ErrorAction SilentlyContinue $pidFile
-}
-
 function Wait-Http([string]$Url) {
-    for ($i = 0; $i -lt 45; $i++) {
+    for ($i = 0; $i -lt 90; $i++) {
         try {
             Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3 | Out-Null
             return $true
@@ -109,26 +88,6 @@ function Get-DashboardHost {
     return "127.0.0.1"
 }
 
-function Start-System {
-    Initialize-Venv
-    Write-Host ""
-    Write-Host "Pornesc sistemul AI (DOAR PAPER TRADING, date Kraken) ..." -ForegroundColor Green
-    Start-One "gateway" @("-m", "risk_gateway.server", "--port", "$GatewayPort", "--data", "kraken")
-    if (-not (Wait-Http "http://127.0.0.1:$GatewayPort/health")) {
-        throw "Risk gateway nu a pornit. Vezi ai_team\state\gateway.err"
-    }
-    Start-One "runner" @("-m", "ai_team.runner", "--data", "kraken", "--gateway", "http://127.0.0.1:$GatewayPort")
-    $dashHost = Get-DashboardHost
-    Start-One "dashboard" @("-m", "ai_team.dashboard.server", "--host", $dashHost, "--port", "$DashboardPort",
-        "--gateway", "http://127.0.0.1:$GatewayPort")
-    if (-not (Wait-Http "http://127.0.0.1:$DashboardPort/api/state")) {
-        throw "Dashboard-ul nu a pornit. Vezi ai_team\state\dashboard.err"
-    }
-    Write-Host ""
-    Write-Host "Dashboard pe acest calculator: http://127.0.0.1:$DashboardPort"
-    if ($dashHost -eq "0.0.0.0") { Show-PhoneLink }
-}
-
 function Show-PhoneLink {
     $ip = Get-LanIp
     Write-Host ""
@@ -142,32 +101,102 @@ function Show-PhoneLink {
     Write-Host "Fara parola: cine e pe Wi-Fi-ul tau poate doar VEDEA dashboard-ul (nu poate da ordine)."
 }
 
-function Stop-System {
-    foreach ($n in @("dashboard", "runner", "gateway")) { Stop-One $n }
+function Start-System {
+    Initialize-Venv
+    $dashHost = Get-DashboardHost
+    if (Test-Running) {
+        Write-Host "  Sistemul ruleaza deja."
+    } else {
+        Remove-Item -Force -ErrorAction SilentlyContinue $StopFile
+        Write-Host ""
+        Write-Host "Pornesc sistemul AI (DOAR PAPER TRADING, date Kraken) ..." -ForegroundColor Green
+        $exe = $Pyw
+        if (-not (Test-Path $exe)) { $exe = $Py }
+        $proc = Start-Process -FilePath $exe -WorkingDirectory $Root -WindowStyle Hidden -PassThru `
+            -ArgumentList @("-m", "ai_team.supervisor", "--data", "kraken", "--dashboard-host", $dashHost,
+                "--dashboard-port", "$DashboardPort")
+        Set-Content -Path $SupPid -Value $proc.Id
+        Write-Host "  supraveghetor pornit (pid $($proc.Id)) - reporneste automat orice componenta care se opreste"
+    }
+    if (-not (Wait-Http "http://127.0.0.1:$DashboardPort/api/state")) {
+        throw "Dashboard-ul nu a pornit. Vezi ai_team\state\supervisor.log si ai_team\state\dashboard.out"
+    }
+    Write-Host ""
+    Write-Host "Dashboard pe acest calculator: http://127.0.0.1:$DashboardPort"
+    if ($dashHost -eq "0.0.0.0") { Show-PhoneLink }
 }
 
-function Restart-Dashboard {
-    Stop-One "dashboard"
-    Start-Sleep -Seconds 1
-    Start-System
+function Stop-System {
+    if (-not (Test-Running)) {
+        Write-Host "  Sistemul nu rula."
+        Remove-Item -Force -ErrorAction SilentlyContinue $SupPid
+        return
+    }
+    Set-Content -Path $StopFile -Value "stop"
+    for ($i = 0; $i -lt 30; $i++) {
+        if (-not (Test-Running)) { break }
+        Start-Sleep -Seconds 1
+    }
+    if (Test-Running) {
+        # Fallback: stop the supervisor and any child it reported.
+        $status = Join-Path $State "supervisor.json"
+        if (Test-Path $status) {
+            $children = (Get-Content $status -Raw | ConvertFrom-Json).children
+            foreach ($c in $children.PSObject.Properties) {
+                if ($c.Value.pid) { Stop-Process -Id $c.Value.pid -Force -ErrorAction SilentlyContinue }
+            }
+        }
+        Stop-Process -Id ([int](Get-Content $SupPid -Raw)) -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item -Force -ErrorAction SilentlyContinue $SupPid
+    Write-Host "  Sistemul a fost oprit."
 }
 
 function Show-Status {
-    foreach ($n in @("gateway", "runner", "dashboard")) {
-        if (Test-Running $n) { Write-Host "  ${n}: ruleaza" } else { Write-Host "  ${n}: oprit" }
-    }
-    if (Test-Running "dashboard") {
-        & $Py -c "import json,urllib.request as u;o=u.build_opener(u.ProxyHandler({}));s=json.load(o.open('http://127.0.0.1:$DashboardPort/api/state',timeout=10));g=s['gateway']['health'];m=s['market'] or {};print('  mod:', 'PAPER' if g.get('mode')=='paper' and g.get('live_trading') is False else 'NECUNOSCUT');print('  agenti online:', sum(1 for a in s['agents'] if a['online'] and a['status']!='error'), '/ 50');print('  Kraken:', 'ok' if m.get('ok') else 'eroare/fara date');print('  alerte:', len(s['alerts']))"
-    }
+    if (Test-Running) { Write-Host "  supraveghetor: ruleaza" } else { Write-Host "  supraveghetor: oprit"; return }
+    & $Py -c "import json,urllib.request as u;sup=json.load(open(r'$State\supervisor.json'));[print('  '+n+':', 'ruleaza' if c['running'] else 'SE REPORNESTE', '(reporniri', c['restarts'], ')') for n,c in sup['children'].items()];o=u.build_opener(u.ProxyHandler({}));s=json.load(o.open('http://127.0.0.1:$DashboardPort/api/state',timeout=10));g=s['gateway']['health'];m=s['market'] or {};print('  mod:', 'PAPER' if g.get('mode')=='paper' and g.get('live_trading') is False else 'NECUNOSCUT');print('  agenti online:', sum(1 for a in s['agents'] if a['online'] and a['status']!='error'), '/ 50');print('  Kraken:', 'ok' if m.get('ok') else 'eroare/fara date');print('  alerte:', len(s['alerts']))"
     if ((Get-DashboardHost) -eq "0.0.0.0") { Show-PhoneLink }
 }
 
+function Install-Autostart {
+    Initialize-Venv
+    $script = Join-Path $Root "ai_team\system.ps1"
+    # VBScript runs PowerShell with no window at all; quotes are doubled inside the VBS string.
+    $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """"$script"""" start"
+    $vbs = @(
+        'Set sh = CreateObject("WScript.Shell")',
+        "sh.CurrentDirectory = ""$Root""",
+        "sh.Run ""$cmd"", 0, False"
+    )
+    Set-Content -Path $StartupLink -Value $vbs -Encoding ASCII
+    Write-Host "Pornire automata activata: botul porneste singur cand intri in Windows." -ForegroundColor Green
+    Write-Host "  ($StartupLink)"
+    Write-Host ""
+    Write-Host "Ca sa mearga non-stop, calculatorul nu trebuie sa intre in sleep."
+    $answer = Read-Host "Opresc sleep-ul cat timp calculatorul e la priza? (D/N)"
+    if ($answer -match "^[DdYy]") {
+        & powercfg /change standby-timeout-ac 0
+        & powercfg /change hibernate-timeout-ac 0
+        Write-Host "Sleep dezactivat cand e la priza. (Il poti reactiva din Setari > Sistem > Alimentare.)"
+    } else {
+        Write-Host "Am lasat setarile de sleep neschimbate."
+    }
+    Start-System
+}
+
+function Remove-Autostart {
+    Remove-Item -Force -ErrorAction SilentlyContinue $StartupLink
+    Write-Host "Pornirea automata a fost dezactivata. (Setarile de sleep nu au fost schimbate.)"
+}
+
 switch ($Command.ToLower()) {
-    "start"   { Start-System }
-    "stop"    { Stop-System }
-    "status"  { Show-Status }
-    "telefon" { Set-Content -Path $HostFile -Value "0.0.0.0"; Restart-Dashboard }
-    "phone"   { Set-Content -Path $HostFile -Value "0.0.0.0"; Restart-Dashboard }
-    "local"   { Remove-Item -Force -ErrorAction SilentlyContinue $HostFile; Restart-Dashboard }
-    default   { Write-Host "Utilizare: system.ps1 start|stop|status|telefon|local"; exit 2 }
+    "start"          { Start-System }
+    "stop"           { Stop-System }
+    "status"         { Show-Status }
+    "telefon"        { Set-Content -Path $HostFile -Value "0.0.0.0"; Stop-System; Start-System }
+    "phone"          { Set-Content -Path $HostFile -Value "0.0.0.0"; Stop-System; Start-System }
+    "local"          { Remove-Item -Force -ErrorAction SilentlyContinue $HostFile; Stop-System; Start-System }
+    "autostart"      { Set-Content -Path $HostFile -Value "0.0.0.0"; Install-Autostart }
+    "fara-autostart" { Remove-Autostart }
+    default          { Write-Host "Utilizare: system.ps1 start|stop|status|telefon|local|autostart|fara-autostart"; exit 2 }
 }

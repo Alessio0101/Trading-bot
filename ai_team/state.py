@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,15 @@ DEFAULT_STATE_DIR = Path(__file__).resolve().parent / "state"
 SIGNAL_AGENTS = [s.id for s in SPECS if s.category == "trading_strategies"] + [
     "signal-aggregation-specialist"
 ]
+
+
+def _within(ts: str | None, ref: str | None, seconds: float) -> bool:
+    if not ts or not ref:
+        return False
+    try:
+        return abs((datetime.fromisoformat(ref) - datetime.fromisoformat(ts)).total_seconds()) <= seconds
+    except ValueError:
+        return False
 
 
 def signal_view(report: Report) -> dict[str, Any]:
@@ -140,6 +150,11 @@ class StateStore:
                     "summary": report.summary,
                     "ts": report.finished_at,
                 }
+                # An agent that works for some pairs only (e.g. options exist for BTC/ETH, not ADA)
+                # is online if any pair succeeded recently, so the last pair alone does not decide.
+                recent = [v for v in a["by_pair"].values() if _within(v["ts"], report.finished_at, 1800)]
+                if report.status != "error" and any(v["status"] == "ok" for v in recent):
+                    a.update(online=True, status="idle")
                 if report.agent_id in SIGNAL_AGENTS:
                     self.signals.setdefault(pair, {})[report.agent_id] = signal_view(report)
             self.save()

@@ -28,6 +28,7 @@ def periods_per_year(timeframe: str) -> float:
 
 class MarketData(Protocol):
     name: str
+    feeds: Any  # ai_team.feeds.PublicFeeds or SyntheticFeeds
 
     def ohlcv(self, pair: str, timeframe: str = "1h", limit: int = 500) -> pd.DataFrame: ...
 
@@ -58,6 +59,9 @@ class KrakenPublicData:
         self.timeout = timeout
         self._cache: dict[tuple, Any] = {}
         self._opener = opener or urllib.request.build_opener()
+        from .feeds import PublicFeeds
+
+        self.feeds = PublicFeeds()
 
     @staticmethod
     def _symbol(pair: str) -> str:
@@ -180,6 +184,9 @@ class SyntheticMarketData:
     def __init__(self, seed: int = 7, drift: float = 0.0001) -> None:
         self.seed = seed
         self.drift = drift
+        from .feeds import SyntheticFeeds
+
+        self.feeds = SyntheticFeeds(self)
 
     def _rng(self, pair: str, salt: int = 0) -> np.random.Generator:
         return np.random.default_rng(self.seed + sum(map(ord, pair)) + salt)

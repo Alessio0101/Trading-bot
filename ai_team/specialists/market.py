@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import numpy as np
 
@@ -80,19 +81,37 @@ EVENT_TAGS = {
 }
 
 
+def _base(pair: str) -> str:
+    return pair.split("/")[0]
+
+
 def news_analyst(ctx: AgentContext) -> HandlerResult:
-    headlines = ctx.task.params.get("headlines")
-    if not headlines:
-        raise NeedsIntegration(
-            "No news feed connected (FinRobot/TradingAgents news tools not installed) and no "
-            "headlines supplied in task params."
-        )
+    """Classify headlines from the public RSS feeds (or headlines given in the task)."""
+    given = ctx.task.params.get("headlines")
+    if given:
+        items = [{"headline": h, "source": "task", "published": None} for h in given]
+        meta: dict[str, Any] = {"asset_specific": True, "sources": ["task"], "feed_errors": {}}
+    else:
+        try:
+            news = ctx.data.feeds.news(_base(ctx.task.pair))
+        except Exception as e:
+            raise NeedsIntegration(f"News feeds unreachable right now: {e}") from e
+        items = news["items"]
+        meta = {
+            "asset_specific": news["asset_specific"],
+            "sources": news["sources"],
+            "feed_errors": news["errors"],
+        }
     tagged = []
-    for h in headlines:
-        low = h.lower()
+    for item in items:
+        low = item["headline"].lower()
         tags = [t for t, kws in EVENT_TAGS.items() if any(k in low for k in kws)] or ["general"]
-        tagged.append({"headline": h, "tags": tags})
-    return HandlerResult(f"Classified {len(tagged)} headlines", {"headlines": tagged})
+        tagged.append({**item, "tags": tags})
+    scope = _base(ctx.task.pair) if meta["asset_specific"] else "crypto market (no asset-specific headlines)"
+    return HandlerResult(
+        f"Classified {len(tagged)} headlines about {scope} from {', '.join(meta['sources'])}",
+        {"headlines": tagged, **meta},
+    )
 
 
 POSITIVE = {
@@ -111,6 +130,18 @@ POSITIVE = {
     "growth",
     "beat",
     "rise",
+    "rises",
+    "jumps",
+    "soars",
+    "rebound",
+    "recovers",
+    "record-high",
+    "breakout",
+    "accumulate",
+    "buying",
+    "inflows",
+    "approves",
+    "wins",
 }
 NEGATIVE = {
     "hack",
@@ -129,6 +160,20 @@ NEGATIVE = {
     "downgrade",
     "recession",
     "fear",
+    "falls",
+    "drops",
+    "slides",
+    "slump",
+    "sell-off",
+    "selloff",
+    "liquidations",
+    "outflows",
+    "sues",
+    "charges",
+    "warning",
+    "decline",
+    "dump",
+    "losses",
 }
 
 
@@ -151,11 +196,70 @@ def sentiment_analyst(ctx: AgentContext) -> HandlerResult:
 
 
 def macro_economic_analyst(ctx: AgentContext) -> HandlerResult:
-    raise NeedsIntegration("No macro data source (FinRobot data tools / FRED API) is connected.")
+    """Crypto-wide risk appetite from CoinGecko's global market data."""
+    try:
+        g = ctx.data.feeds.global_market()
+    except Exception as e:
+        raise NeedsIntegration(f"Global market data unreachable right now: {e}") from e
+    change = float(g.get("market_cap_change_percentage_24h_usd") or 0.0)
+    btc_dom = float((g.get("market_cap_percentage") or {}).get("btc") or 0.0)
+    regime = "risk-on" if change > 1.5 else "risk-off" if change < -1.5 else "neutral"
+    total = float((g.get("total_market_cap") or {}).get("usd") or 0.0)
+    return HandlerResult(
+        f"Crypto market {regime}: total cap {total / 1e12:.2f}T USD ({change:+.2f}% 24h), "
+        f"BTC dominance {btc_dom:.1f}%",
+        {
+            "regime": regime,
+            "total_market_cap_usd": total,
+            "market_cap_change_24h_pct": change,
+            "btc_dominance_pct": btc_dom,
+            "risk_appetite": max(-1.0, min(1.0, change / 5)),
+            "scope": "crypto market only; no economic data (rates, CPI) feed is connected",
+        },
+    )
 
 
 def fundamental_analyst(ctx: AgentContext) -> HandlerResult:
-    raise NeedsIntegration("No on-chain/tokenomics data provider is connected.")
+    """Tokenomics and valuation health from CoinGecko market data."""
+    asset = _base(ctx.task.pair)
+    try:
+        f = ctx.data.feeds.fundamentals([asset]).get(asset)
+    except Exception as e:
+        raise NeedsIntegration(f"Fundamental data unreachable right now: {e}") from e
+    if not f:
+        raise NeedsIntegration(f"No fundamental data for {asset}")
+    mcap = float(f.get("market_cap") or 0)
+    fdv = float(f.get("fully_diluted_valuation") or mcap or 0)
+    circ = float(f.get("circulating_supply") or 0)
+    cap = float(f.get("max_supply") or f.get("total_supply") or circ or 0)
+    turnover = float(f.get("total_volume") or 0) / mcap if mcap else 0.0
+    circulating_ratio = circ / cap if cap else 1.0
+    dilution = fdv / mcap if mcap else 1.0
+    ath_gap = float(f.get("ath_change_percentage") or 0)
+    ch30 = float(f.get("price_change_percentage_30d_in_currency") or 0)
+    # Score 0..1: more circulating supply, less future dilution and healthy turnover score higher.
+    score = (
+        0.4 * min(circulating_ratio, 1.0)
+        + 0.3 * min(1.0, 1 / max(dilution, 1.0))
+        + 0.3 * min(turnover / 0.05, 1.0)
+    )
+    return HandlerResult(
+        f"{asset} fundamentals score {score:.2f}: {circulating_ratio:.0%} of supply circulating, "
+        f"FDV/market cap {dilution:.2f}, turnover {turnover:.1%}/day, {ath_gap:+.0f}% from ATH",
+        {
+            "asset": asset,
+            "fundamental_score": round(score, 3),
+            "market_cap_usd": mcap,
+            "fdv_usd": fdv,
+            "circulating_ratio": circulating_ratio,
+            "fdv_to_market_cap": dilution,
+            "daily_turnover": turnover,
+            "ath_change_pct": ath_gap,
+            "change_30d_pct": ch30,
+            "rank": f.get("market_cap_rank"),
+            "source": "CoinGecko",
+        },
+    )
 
 
 def volume_analyst(ctx: AgentContext) -> HandlerResult:

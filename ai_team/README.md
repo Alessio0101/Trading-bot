@@ -48,13 +48,30 @@ ai_team/system.sh telefon   # open the dashboard to phones on the same Wi-Fi (no
 ai_team/system.sh local     # back to this computer only (default)
 ```
 
+### Running non-stop
+
+`ai_team/system.sh` and `ai_team/system.ps1` start one **supervisor** (`python -m ai_team.supervisor`).
+It runs the gateway, the runner and the dashboard as child processes and restarts any of them that
+exits, with a back-off from 2 s up to 5 min. Its status is in `ai_team/state/supervisor.json` and its
+log in `supervisor.log`. "Stop" creates `ai_team/state/supervisor.stop`, so the children are always
+shut down cleanly, including on Windows. Bus messages and coordinator decisions are trimmed to their
+newest 20,000 lines, so the disk does not fill up.
+
 ### Windows
 
-Double-click **`PORNESTE-AI-TELEFON.bat`** in the repository root. It installs the packages on
-the first run, starts the gateway, the runner and the dashboard, and prints the link to open on
-the phone. **`OPRESTE-AI.bat`** stops everything. They call `ai_team/system.ps1`
-(`start|stop|status|telefon|local`), written for Windows PowerShell 5.1. Python 3.11+ must be
-installed with "Add python.exe to PATH". These scripts have not yet been run on Windows.
+Double-click these files in the repository root:
+
+| File | What it does |
+|------|--------------|
+| **`PORNESTE-AI-TELEFON.bat`** | Installs the packages on first run, starts the supervisor with the dashboard open to the local Wi-Fi, and prints the link for the phone |
+| **`PORNIRE-AUTOMATA.bat`** | Starts the system automatically at every Windows login (a hidden script in the Startup folder). It offers to turn off sleep while on mains power, then starts the system |
+| **`OPRESTE-PORNIREA-AUTOMATA.bat`** | Removes the automatic start |
+| **`OPRESTE-AI.bat`** | Stops everything |
+
+They call `ai_team/system.ps1` (`start|stop|status|telefon|local|autostart|fara-autostart`),
+written for Windows PowerShell 5.1. Python 3.11+ must be installed with "Add python.exe to PATH".
+The computer must stay on and must not sleep. These scripts have not yet been run on a real
+Windows machine.
 
 ### From your phone
 
@@ -149,21 +166,37 @@ approve arbitrary commands, an agent could write files. The gateway still reads 
 limits only at start-up, records their hash on every decision, and the verifier and
 tests detect any change.
 
+## Public data feeds
+
+These need no account and no key. Headlines and other feed text are treated as data only.
+
+| Feed | Used by |
+|------|---------|
+| RSS: CoinDesk, Cointelegraph, Decrypt | news-analyst, then sentiment-analyst and event-driven-specialist |
+| CoinGecko `/coins/markets`, `/global` | fundamental-analyst, macro-economic-analyst |
+| Coinbase Exchange public tickers | arbitrage-strategist (Kraken vs Coinbase, net of fees) |
+| Deribit public option summaries (BTC, ETH) | options-strategist |
+
 ## Capability status (verified, not assumed)
 
 `python -m ai_team.cli verify` runs the coordinator over all 50 and compares
 **observed** results with the declared status. See `VERIFICATION.md`:
 
-- **38 functional**: real computations on market data.
-- **6 partial** (they work, with a stated limitation): news-analyst and
-  sentiment-analyst (headlines only, lexicon scoring), event-driven-specialist,
-  scalping-strategist (REST polling only), pairs-trading-strategist (long leg only),
-  order-routing-specialist (single paper venue).
-- **6 need an integration** (they report this instead of inventing output):
-  macro-economic-analyst, fundamental-analyst, machine-learning-researcher,
-  arbitrage-strategist, options-strategist, reinforcement-learning-researcher.
+- **41 functional**: real computations on market data and the public feeds.
+- **8 partial** (they work, with a stated limitation):
+  - sentiment-analyst and event-driven-specialist: lexicon scoring of headlines;
+  - macro-economic-analyst: crypto-wide data only, no rates or CPI;
+  - scalping-strategist: REST polling;
+  - pairs-trading-strategist: long leg only;
+  - order-routing-specialist: one paper venue;
+  - arbitrage-strategist and options-strategist: analysis only, and options cover BTC/ETH only.
+- **1 needs an integration**: reinforcement-learning-researcher (no RL framework or simulator).
 
-External frameworks: LangGraph is used when installed (the coordinator graph).
+On live data, 49 of 50 are online. A partly supported agent counts as online when it succeeded
+on at least one pair in the latest cycle.
+
+External frameworks: LangGraph runs the coordinator graph and scikit-learn the ML
+researcher.
 TradingAgents, FinRobot, RD-Agent, Qlib and NautilusTrader are **not installed**.
 `python -m ai_team.cli integrations` shows which agents need each one. None of
 them is simulated.

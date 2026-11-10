@@ -85,6 +85,12 @@ FRAMEWORKS: dict[str, dict[str, Any]] = {
         ],
         "install": "pip install nautilus_trader",
     },
+    "sklearn": {
+        "name": "scikit-learn",
+        "module": "sklearn",
+        "used_by": ["machine-learning-researcher"],
+        "install": "pip install -r ai_team/requirements.txt",
+    },
     "freqtrade": {
         "name": "freqtrade (paper bot)",
         "module": "freqtrade",

@@ -10,7 +10,7 @@ Overall: **PASS**
 
 ## 2. Coordinator invocation (real run, synthetic data, temporary paper gateway)
 - Specialists invoked: 50/50
-- Observed: ok=44, needs_integration=6, error=0, not_invoked=0
+- Observed: ok=49, needs_integration=1, error=0, not_invoked=0
 - Gateway submissions: 3 (approved 3)
 - Bypass attempt (non-coordinator, no reviews, override field): rejected - ["unknown fields rejected: ['override_limits']"]
 - Decisions logged: 24, bus messages: 366
@@ -20,7 +20,7 @@ Overall: **PASS**
 - volume_liquidity_orderflow: hand-offs OK; statuses {'volume-analyst': 'ok', 'liquidity-analyst': 'ok', 'order-flow-analyst': 'ok'}
 - volatility_sizing_portfolio: hand-offs OK; statuses {'volatility-analyst': 'ok', 'position-sizing-specialist': 'ok', 'portfolio-risk-analyst': 'ok'}
 - research_backtest_review: hand-offs OK; statuses {'quantitative-researcher': 'ok', 'backtesting-specialist': 'ok', 'independent-risk-reviewer': 'ok'}
-- data_features_ml: hand-offs OK; statuses {'data-engineer': 'ok', 'feature-engineer': 'ok', 'machine-learning-researcher': 'needs_integration'}
+- data_features_ml: hand-offs OK; statuses {'data-engineer': 'ok', 'feature-engineer': 'ok', 'machine-learning-researcher': 'ok'}
 - liquidity_slippage_cost: hand-offs OK; statuses {'liquidity-analyst': 'ok', 'slippage-analyst': 'ok', 'transaction-cost-analyst': 'ok'}
 
 ## 4. Per-agent result
@@ -29,10 +29,10 @@ Overall: **PASS**
 |---|-------|----------|----------|------------|---------------------|
 | 1 | technical-analyst | functional | ok | yes | SOL/USDT trend up (bias +1.00), RSI 88.5 overbought |
 | 2 | chart-pattern-analyst | functional | ok | yes | Support 2396.55, resistance 2733.51, structure higher-highs/higher-lows |
-| 3 | news-analyst | partial | ok | yes | Classified 2 headlines |
+| 3 | news-analyst | functional | ok | yes | Classified 2 headlines about BTC from task |
 | 4 | sentiment-analyst | partial | ok | yes | Sentiment +1.00 over 2 headlines |
-| 5 | macro-economic-analyst | needs_integration | needs_integration | yes | No macro data source connected (needs FinRobot data tools or a FRED key). |
-| 6 | fundamental-analyst | needs_integration | needs_integration | yes | No on-chain data provider connected. |
+| 5 | macro-economic-analyst | partial | ok | yes | Crypto market neutral: total cap 2.50T USD (+1.10% 24h), BTC dominance 57.0% |
+| 6 | fundamental-analyst | functional | ok | yes | SOL fundamentals score 0.82: 91% of supply circulating, FDV/market cap 1.10, turnover 3.0% |
 | 7 | volume-analyst | functional | ok | yes | Relative volume 1.02x, z +0.05, OBV rising |
 | 8 | liquidity-analyst | functional | ok | yes | Spread 2.00 bps, depth ±1% 329,408,739 quote, score 0.98 |
 | 9 | order-flow-analyst | functional | ok | yes | Trade imbalance +0.07, book imbalance +0.47, flow bias +0.23 |
@@ -40,7 +40,7 @@ Overall: **PASS**
 | 11 | quantitative-researcher | functional | ok | yes | Best hypothesis momentum_24 (IC +0.069); 4/5 strategies have positive-IC support: ['moment |
 | 12 | statistical-arbitrage-researcher | functional | ok | yes | BTC/USDT~ETH/USDT: beta 1.079, z -0.02, half-life 18.6 bars |
 | 13 | factor-researcher | functional | ok | yes | Top factor rank: SOL/USDT |
-| 14 | machine-learning-researcher | needs_integration | needs_integration | yes | Model training is delegated to Qlib/RD-Agent, which are not installed. |
+| 14 | machine-learning-researcher | functional | ok | yes | Walk-forward accuracy 54.0% vs baseline 65.3% (-11.3%): no reliable edge; P(up next 6 bars |
 | 15 | backtesting-specialist | functional | ok | yes | Backtested 5 strategies on 720 bars; best trend_following (Sharpe 15.15) |
 | 16 | data-engineer | functional | ok | yes | 500 rows from synthetic, quality OK, gaps 0 |
 | 17 | feature-engineer | functional | ok | yes | Built 6 features x 451 rows |
@@ -52,8 +52,8 @@ Overall: **PASS**
 | 23 | event-driven-specialist | partial | ok | yes | Event view: sentiment +1.00, tags ['adoption', 'listing', 'regulation'], veto=False |
 | 24 | swing-trading-strategist | functional | ok | yes | swing: flat; 0 proposal(s) |
 | 25 | scalping-strategist | partial | ok | yes | scalping (1m, polling only): flat |
-| 26 | arbitrage-strategist | needs_integration | needs_integration | yes | Only one venue (Kraken public) is reachable; needs a second venue adapter. |
-| 27 | options-strategist | needs_integration | needs_integration | yes | No options venue/data connected (e.g. Deribit) and paper broker is spot-only. |
+| 26 | arbitrage-strategist | partial | ok | yes | SOL/USDT: Kraken vs Coinbase gap -4.0 bps; best route buy Kraken / sell Coinbase +2.0 bps  |
+| 27 | options-strategist | partial | ok | yes | No option data for SOL: no listed options for SOL on Deribit (only ['BTC', 'ETH']) |
 | 28 | pairs-trading-strategist | partial | ok | yes | Pair BTC/USDT/ETH/USDT z=-0.02; 0 proposal(s) |
 | 29 | execution-trader | functional | ok | yes | Plan: buy 0.366228 SOL/USDT @ 2728.84 IOC (paper) |
 | 30 | order-routing-specialist | partial | ok | yes | Routed to 'paper' (only venue available; live venues are disabled) |
@@ -86,4 +86,5 @@ Overall: **PASS**
 - Qlib: NOT installed - used by 6 agent(s)
 - LangGraph: installed unknown - used by 1 agent(s)
 - NautilusTrader: NOT installed - used by 8 agent(s)
-- freqtrade (paper bot): installed 2026.11-dev-61c789f - used by 2 agent(s)
+- scikit-learn: installed 1.8.0 - used by 1 agent(s)
+- freqtrade (paper bot): installed 2026.11-dev-168f0ed - used by 2 agent(s)

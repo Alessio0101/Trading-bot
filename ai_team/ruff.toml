@@ -17,3 +17,4 @@ max-complexity = 25
 # Fixed https Kraken endpoint / local gateway URL, not user-controlled schemes.
 "data.py" = ["S310"]
 "gateway_client.py" = ["S310"]
+"feeds.py" = ["S310"]

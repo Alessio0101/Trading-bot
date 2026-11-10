@@ -35,8 +35,28 @@ from .state import DEFAULT_STATE_DIR, StateStore
 
 
 MARKET_HISTORY = 720  # points per pair kept for the dashboard (2h at 10s)
+# Logs that grow with every cycle are trimmed to their newest lines so a machine
+# running non-stop never fills its disk (~360 bus messages per cycle).
+TRIM_LIMITS = {"messages.jsonl": 20_000, "decisions.jsonl": 20_000}
+TRIM_SLACK = 1.25  # trim only when 25 % over the limit, to avoid rewriting every cycle
 
 log = logging.getLogger("ai_team.runner")
+
+
+def trim_jsonl(path: Path, keep: int) -> int:
+    """Keep the newest ``keep`` lines of a JSONL file; returns how many lines were dropped."""
+    if not path.exists():
+        return 0
+    with path.open("rb") as f:
+        count = sum(1 for _ in f)
+    if count <= keep * TRIM_SLACK:
+        return 0
+    with path.open("rb") as f:
+        lines = f.readlines()[-keep:]
+    tmp = path.with_suffix(".trim")
+    tmp.write_bytes(b"".join(lines))
+    tmp.replace(path)
+    return count - keep
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -192,6 +212,10 @@ class Runner:
                 self.status["cycles_failed"] += 1
                 self.status["last_error"] = result["error"]
             log.exception("cycle failed")
+        for name, keep in TRIM_LIMITS.items():
+            dropped = trim_jsonl(self.state_dir / name, keep)
+            if dropped:
+                log.info("trimmed %s lines from %s", dropped, name)
         with self._lock:
             self.status.update(current_cycle=None, last_cycle=result, state="idle")
         self._save_status()

@@ -132,12 +132,81 @@ def factor_researcher(ctx: AgentContext) -> HandlerResult:
     )
 
 
-def machine_learning_researcher(ctx: AgentContext) -> HandlerResult:
-    from ..integrations import status as integ
+ML_HORIZON = 6  # bars ahead to predict
 
-    if not (integ("qlib")["installed"] or integ("rdagent")["installed"]):
-        raise NeedsIntegration("Model training needs Qlib or RD-Agent; neither is installed.")
-    raise NeedsIntegration("Qlib/RD-Agent detected but the training pipeline is not wired yet.")
+
+def _ml_features(df: pd.DataFrame) -> pd.DataFrame:
+    c = df["close"]
+    return pd.DataFrame(
+        {
+            "ret_1": c.pct_change(),
+            "ret_6": c.pct_change(6),
+            "ret_24": c.pct_change(24),
+            "vol_24": ind.log_returns(c).rolling(24).std(),
+            "rsi_14": ind.rsi(c) / 100,
+            "ema_ratio": ind.ema(c, 20) / ind.ema(c, 50) - 1,
+            "vol_ratio": df["volume"] / df["volume"].rolling(50).mean(),
+        },
+        index=df.index,
+    )
+
+
+def machine_learning_researcher(ctx: AgentContext) -> HandlerResult:
+    """Walk-forward logistic regression predicting the direction of the next 6 bars."""
+    try:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.metrics import roc_auc_score
+        from sklearn.model_selection import TimeSeriesSplit
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+    except ImportError as e:
+        raise NeedsIntegration(
+            "scikit-learn is not installed (pip install -r ai_team/requirements.txt)"
+        ) from e
+
+    df = ctx.ohlcv(limit=720)
+    feats = _ml_features(df)
+    target = (df["close"].shift(-ML_HORIZON) > df["close"]).astype(int)
+    data = feats.assign(target=target).iloc[:-ML_HORIZON].dropna()
+    if len(data) < 200:
+        raise NeedsIntegration(f"Only {len(data)} usable rows; need at least 200 for walk-forward training")
+    X, y = data.drop(columns="target").to_numpy(), data["target"].to_numpy()
+    accs, aucs, bases = [], [], []
+    for train, test in TimeSeriesSplit(n_splits=5).split(X):
+        if len(set(y[train])) < 2:
+            continue
+        model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=500))
+        model.fit(X[train], y[train])
+        prob = model.predict_proba(X[test])[:, 1]
+        accs.append(float(((prob > 0.5) == y[test]).mean()))
+        bases.append(float(max(y[test].mean(), 1 - y[test].mean())))
+        if len(set(y[test])) == 2:
+            aucs.append(float(roc_auc_score(y[test], prob)))
+    if not accs:
+        raise NeedsIntegration("Training windows contained a single class; nothing to learn")
+    final = make_pipeline(StandardScaler(), LogisticRegression(max_iter=500)).fit(X, y)
+    latest = feats.dropna().iloc[[-1]].to_numpy()
+    p_up = float(final.predict_proba(latest)[0, 1])
+    acc, base = float(np.mean(accs)), float(np.mean(bases))
+    edge = acc - base
+    verdict = "edge" if edge > 0.02 and (not aucs or np.mean(aucs) > 0.52) else "no reliable edge"
+    return HandlerResult(
+        f"Walk-forward accuracy {acc:.1%} vs baseline {base:.1%} ({edge:+.1%}): {verdict}; "
+        f"P(up next {ML_HORIZON} bars) = {p_up:.2f}",
+        {
+            "model": "logistic regression (scikit-learn)",
+            "horizon_bars": ML_HORIZON,
+            "folds": len(accs),
+            "oos_accuracy": acc,
+            "baseline_accuracy": base,
+            "edge": edge,
+            "oos_auc": float(np.mean(aucs)) if aucs else None,
+            "p_up": p_up,
+            "verdict": verdict,
+            "features": list(feats.columns),
+            "rows": len(data),
+        },
+    )
 
 
 def backtesting_specialist(ctx: AgentContext) -> HandlerResult:

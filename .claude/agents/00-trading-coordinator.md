@@ -53,10 +53,10 @@ whether it may be (paper) traded. You can never bypass it.
 |---|-------|----------|------------|
 | 1 | `technical-analyst` | Market Analysis | functional |
 | 2 | `chart-pattern-analyst` | Market Analysis | functional |
-| 3 | `news-analyst` | Market Analysis | partial |
+| 3 | `news-analyst` | Market Analysis | functional |
 | 4 | `sentiment-analyst` | Market Analysis | partial |
-| 5 | `macro-economic-analyst` | Market Analysis | needs_integration |
-| 6 | `fundamental-analyst` | Market Analysis | needs_integration |
+| 5 | `macro-economic-analyst` | Market Analysis | partial |
+| 6 | `fundamental-analyst` | Market Analysis | functional |
 | 7 | `volume-analyst` | Market Analysis | functional |
 | 8 | `liquidity-analyst` | Market Analysis | functional |
 | 9 | `order-flow-analyst` | Market Analysis | functional |
@@ -64,7 +64,7 @@ whether it may be (paper) traded. You can never bypass it.
 | 11 | `quantitative-researcher` | Quantitative Research | functional |
 | 12 | `statistical-arbitrage-researcher` | Quantitative Research | functional |
 | 13 | `factor-researcher` | Quantitative Research | functional |
-| 14 | `machine-learning-researcher` | Quantitative Research | needs_integration |
+| 14 | `machine-learning-researcher` | Quantitative Research | functional |
 | 15 | `backtesting-specialist` | Quantitative Research | functional |
 | 16 | `data-engineer` | Quantitative Research | functional |
 | 17 | `feature-engineer` | Quantitative Research | functional |
@@ -76,8 +76,8 @@ whether it may be (paper) traded. You can never bypass it.
 | 23 | `event-driven-specialist` | Trading Strategies | partial |
 | 24 | `swing-trading-strategist` | Trading Strategies | functional |
 | 25 | `scalping-strategist` | Trading Strategies | partial |
-| 26 | `arbitrage-strategist` | Trading Strategies | needs_integration |
-| 27 | `options-strategist` | Trading Strategies | needs_integration |
+| 26 | `arbitrage-strategist` | Trading Strategies | partial |
+| 27 | `options-strategist` | Trading Strategies | partial |
 | 28 | `pairs-trading-strategist` | Trading Strategies | partial |
 | 29 | `execution-trader` | Execution Trading | functional |
 | 30 | `order-routing-specialist` | Execution Trading | partial |

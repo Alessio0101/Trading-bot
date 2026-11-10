@@ -7,6 +7,10 @@ Specialist can test exactly what the strategist proposes.
 
 from __future__ import annotations
 
+import re
+from datetime import UTC, datetime
+
+import numpy as np
 import pandas as pd
 
 from .. import indicators as ind
@@ -189,12 +193,115 @@ def event_driven_specialist(ctx: AgentContext) -> HandlerResult:
     )
 
 
+KRAKEN_TAKER_BPS = 26.0
+COINBASE_TAKER_BPS = 60.0
+
+
 def arbitrage_strategist(ctx: AgentContext) -> HandlerResult:
-    raise NeedsIntegration("Needs a second venue price feed; only Kraken public data is connected.")
+    """Compare Kraken with Coinbase net of both venues' taker fees (analysis only)."""
+    pair = ctx.task.pair
+    try:
+        cb = ctx.data.feeds.second_venue([pair]).get(pair)
+    except Exception as e:
+        raise NeedsIntegration(f"Second venue (Coinbase) unreachable right now: {e}") from e
+    if not cb:
+        raise NeedsIntegration(f"Coinbase lists no {pair} market")
+    book = ctx.data.order_book(pair)
+    kr_bid, kr_ask = book["bids"][0][0], book["asks"][0][0]
+    fees = KRAKEN_TAKER_BPS + COINBASE_TAKER_BPS
+    # Buy where it is cheaper (at the ask), sell where it is dearer (at the bid).
+    routes = {
+        "buy Kraken / sell Coinbase": (cb["bid"] - kr_ask) / kr_ask * 1e4,
+        "buy Coinbase / sell Kraken": (kr_bid - cb["ask"]) / cb["ask"] * 1e4,
+    }
+    best = max(routes, key=lambda k: routes[k])
+    gross = routes[best]
+    net = gross - fees
+    mid_gap = ((kr_bid + kr_ask) / 2 / ((cb["bid"] + cb["ask"]) / 2) - 1) * 1e4
+    return HandlerResult(
+        f"{pair}: Kraken vs Coinbase gap {mid_gap:+.1f} bps; best route {best} "
+        f"{gross:+.1f} bps gross, {net:+.1f} bps after {fees:.0f} bps fees"
+        + (" (opportunity)" if net > 0 else " (no opportunity)"),
+        {
+            "route": best,
+            "gross_bps": gross,
+            "net_bps": net,
+            "fees_bps": fees,
+            "mid_gap_bps": mid_gap,
+            "opportunity": net > 0,
+            "kraken_bid": kr_bid,
+            "kraken_ask": kr_ask,
+            "coinbase_bid": cb["bid"],
+            "coinbase_ask": cb["ask"],
+            "note": "Analysis only: the paper broker trades one venue, so no cross-venue order is proposed.",
+        },
+    )
+
+
+_EXPIRY = re.compile(r"^[A-Z]+-(\d{1,2}[A-Z]{3}\d{2})-(\d+(?:d\d+)?)-([CP])$")
+
+
+def _parse_option(name: str):
+    m = _EXPIRY.match(name)
+    if not m:
+        return None
+    expiry = datetime.strptime(m.group(1), "%d%b%y").replace(tzinfo=UTC, hour=8)
+    return expiry, float(m.group(2).replace("d", ".")), m.group(3)
 
 
 def options_strategist(ctx: AgentContext) -> HandlerResult:
-    raise NeedsIntegration("Needs an options chain source and an options-capable paper broker.")
+    """Implied vs realised volatility and put/call positioning from Deribit (analysis only)."""
+    asset = ctx.task.pair.split("/")[0]
+    try:
+        rows = ctx.data.feeds.options(asset)
+    except Exception as e:
+        raise NeedsIntegration(f"No option data for {asset}: {e}") from e
+    now = datetime.now(UTC)
+    parsed = []
+    for r in rows:
+        p = _parse_option(r.get("instrument_name", ""))
+        if p and r.get("mark_iv") and r.get("underlying_price"):
+            parsed.append((p[0], p[1], p[2], r))
+    expiries = sorted({e for e, *_ in parsed if (e - now).days >= 3})
+    if not expiries:
+        raise NeedsIntegration(f"No {asset} option expiry at least 3 days out")
+    expiry = expiries[0]
+    near = [(k, cp, r) for e, k, cp, r in parsed if e == expiry]
+    under = float(near[0][2]["underlying_price"])
+    atm_strike = min({k for k, _, _ in near}, key=lambda k: abs(k - under))
+    atm = [r for k, _, r in near if k == atm_strike]
+    atm_iv = float(np.mean([r["mark_iv"] for r in atm]))
+    put_oi = sum(r.get("open_interest") or 0 for _, _, cp, r in parsed if cp == "P")
+    call_oi = sum(r.get("open_interest") or 0 for _, _, cp, r in parsed if cp == "C")
+    pc_ratio = put_oi / call_oi if call_oi else None
+    closes = ctx.data.ohlcv(ctx.task.pair, "1h", 24 * 14)["close"]
+    rv = ind.realised_vol(closes, 365 * 24) * 100
+    premium = atm_iv - rv
+    if premium > 10:
+        view = "options rich vs realised: a covered call (selling premium) would be favoured"
+    elif premium < -5:
+        view = "options cheap vs realised: protective puts are inexpensive"
+    else:
+        view = "options fairly priced vs realised volatility"
+    return HandlerResult(
+        f"{asset} ATM IV {atm_iv:.1f}% ({(expiry - now).days}d) vs realised {rv:.1f}%; "
+        f"put/call OI {pc_ratio:.2f}; {view}"
+        if pc_ratio is not None
+        else f"{asset} ATM IV {atm_iv:.1f}%",
+        {
+            "asset": asset,
+            "expiry": expiry.date().isoformat(),
+            "days_to_expiry": (expiry - now).days,
+            "atm_strike": atm_strike,
+            "atm_iv_pct": atm_iv,
+            "realised_vol_pct": rv,
+            "iv_premium_pct": premium,
+            "put_call_oi_ratio": pc_ratio,
+            "view": view,
+            "source": "Deribit",
+            "note": "Analysis only: the paper broker is spot-only, so no option trade is proposed.",
+        },
+    )
 
 
 def pairs_trading_strategist(ctx: AgentContext) -> HandlerResult:
