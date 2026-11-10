@@ -367,3 +367,39 @@ def test_partly_supported_agent_stays_online(tmp_path):
     only_na = StateStore(tmp_path / "other")
     only_na.finish(na, "ADA/USDT")
     assert only_na.agents["options-strategist"]["online"] is False
+
+
+def test_replace_with_retry_waits_for_a_windows_lock(tmp_path, monkeypatch):
+    from ai_team import fsutil
+
+    monkeypatch.setattr(fsutil, "REPLACE_DELAY_S", 0)
+    target = tmp_path / "agents.json"
+    target.write_text("old")
+    real_replace = Path.replace
+    calls = {"n": 0}
+
+    def locked_twice(self, other):
+        calls["n"] += 1
+        if calls["n"] <= 2:  # the dashboard is reading agents.json (WinError 5)
+            raise PermissionError(13, "Access is denied")
+        return real_replace(self, other)
+
+    monkeypatch.setattr(Path, "replace", locked_twice)
+    fsutil.atomic_write_text(target, "new")
+    assert target.read_text() == "new" and calls["n"] == 3
+    assert not (tmp_path / "agents.tmp").exists()
+
+    calls["n"] = -1000  # locked for longer than the retry budget: the error surfaces
+    with pytest.raises(PermissionError):
+        fsutil.atomic_write_text(target, "newer")
+
+
+def test_runner_status_write_failure_is_logged_not_raised(tmp_path, monkeypatch, caplog):
+    from ai_team import runner
+
+    def always_locked(path, text, encoding="utf-8"):
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(runner, "atomic_write_text", always_locked)
+    runner.write_json(tmp_path / "runner.json", {"a": 1})
+    assert "could not write runner.json" in caplog.text

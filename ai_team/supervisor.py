@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .data import TIMEFRAME_MINUTES
+from .fsutil import atomic_write_text
 from .models import utcnow
 from .runtime import DEFAULT_TIMEFRAME
 from .state import DEFAULT_STATE_DIR
@@ -192,19 +193,17 @@ def main(argv: list[str] | None = None) -> int:
                     and time.monotonic() - c.started_at < 3
                 ):
                     stop.wait(3)  # give the gateway a head start; the runner fails closed meanwhile
-            tmp = status_file.with_suffix(".tmp")
-            tmp.write_text(
-                json.dumps(
-                    {
-                        "pid": os.getpid(),
-                        "started_at": started,
-                        "heartbeat": utcnow(),
-                        "dashboard_host": a.dashboard_host,
-                        "children": {c.name: c.status() for c in children},
-                    }
-                )
-            )
-            tmp.replace(status_file)
+            status = {
+                "pid": os.getpid(),
+                "started_at": started,
+                "heartbeat": utcnow(),
+                "dashboard_host": a.dashboard_host,
+                "children": {c.name: c.status() for c in children},
+            }
+            try:
+                atomic_write_text(status_file, json.dumps(status))
+            except OSError as e:  # a status file must never stop the supervisor
+                log.warning("could not write %s: %s", status_file.name, e)
             if stop_file.exists():
                 log.info("stop requested via %s", stop_file.name)
                 stop.set()

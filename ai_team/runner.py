@@ -27,6 +27,7 @@ from typing import Any
 from .bus import MessageBus
 from .coordinator import Coordinator, build_langgraph
 from .data import TIMEFRAME_MINUTES, KrakenPublicData, MarketData, SyntheticMarketData
+from .fsutil import atomic_write_text, replace_with_retry
 from .gateway_client import GatewayClient
 from .models import utcnow
 from .runtime import DEFAULT_TIMEFRAME, DEFAULT_UNIVERSE
@@ -55,14 +56,15 @@ def trim_jsonl(path: Path, keep: int) -> int:
         lines = f.readlines()[-keep:]
     tmp = path.with_suffix(".trim")
     tmp.write_bytes(b"".join(lines))
-    tmp.replace(path)
+    replace_with_retry(tmp, path)
     return count - keep
 
 
 def write_json(path: Path, data: Any) -> None:
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, default=str))
-    tmp.replace(path)
+    try:
+        atomic_write_text(path, json.dumps(data, default=str))
+    except OSError as e:  # status files must not stop the feed, heartbeat or cycle loops
+        log.warning("could not write %s: %s", path.name, e)
 
 
 class Runner:

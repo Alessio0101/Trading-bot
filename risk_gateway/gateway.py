@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -110,7 +111,16 @@ class RiskGateway:
     def _save(self) -> None:
         tmp = self.portfolio_file.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.portfolio, indent=2), encoding="utf-8")
-        tmp.replace(self.portfolio_file)
+        # On Windows the replace fails while another process (e.g. antivirus) briefly
+        # holds the file open, so retry for up to ~5 s before giving up.
+        for attempt in range(100):
+            try:
+                tmp.replace(self.portfolio_file)
+                break
+            except PermissionError:
+                if attempt == 99:
+                    raise
+                time.sleep(0.05)
 
     def _log(self, entry: dict) -> None:
         with self.log_file.open("a", encoding="utf-8") as f:

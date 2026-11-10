@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .fsutil import atomic_write_text
 from .models import Report, Signal, utcnow
 from .specs import BY_ID, CATEGORIES, SPECS
 
@@ -109,9 +110,7 @@ class StateStore:
 
     def save(self) -> None:
         for path, data in ((self.agents_file, self.agents), (self.signals_file, self.signals)):
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, indent=1, default=str))
-            tmp.replace(path)
+            atomic_write_text(path, json.dumps(data, indent=1, default=str))
 
     def start(self, agent_id: str, objective: str) -> None:
         with self._lock:
