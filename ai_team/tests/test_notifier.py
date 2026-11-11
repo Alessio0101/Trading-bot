@@ -174,7 +174,7 @@ class TestTelegram:
 class TestNotifier:
     def make(self, tmp_path):
         http, gw = FakeTelegramHTTP(), FakeGateway()
-        n = nt.Notifier(gw, tmp_path, nt.Telegram(TOKEN, "42", opener=http))
+        n = nt.Notifier(gw, tmp_path, nt.Telegram(TOKEN, "42", opener=http), review_writer=lambda s: None)
         return n, gw, http
 
     def texts(self, http):
@@ -222,6 +222,15 @@ class TestNotifier:
         assert n.tick(NOW + timedelta(days=7)) == 1
         assert "RAPORT SĂPTĂMÂNAL" in self.texts(http)[-1]
         assert n.tick(NOW + timedelta(days=8)) == 0
+
+    def test_claude_review_follows_the_report_when_available(self, tmp_path):
+        n, _gw, http = self.make(tmp_path)
+        seen = []
+        n.review_writer = lambda summary: seen.append(summary) or "Saptamana a fost linistita."
+        n.send_report(NOW)
+        texts = self.texts(http)
+        assert "RAPORT" in texts[-2] and texts[-1].startswith("🧠") and "linistita" in texts[-1]
+        assert {"equity", "readiness", "track_record", "strategy_verdicts", "tuning"} <= set(seen[0])
 
     def test_unconfigured_notifier_does_nothing(self, tmp_path):
         assert nt.Notifier(FakeGateway(), tmp_path).tick(NOW) == 0

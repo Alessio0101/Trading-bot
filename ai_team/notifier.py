@@ -31,8 +31,10 @@ from . import readiness
 from .fsutil import atomic_write_text
 from .gateway_client import GatewayClient
 from .history import CandleStore
+from .llm_review import week_summary, write_review
 from .state import DEFAULT_STATE_DIR, StateStore
 from .track_record import SignalLedger
+from .tuning import Tuner
 
 
 log = logging.getLogger("ai_team.notifier")
@@ -217,11 +219,18 @@ def weekly_report(
 
 # ---------------- the running notifier ----------------
 class Notifier:
-    def __init__(self, gateway: GatewayClient, state_dir: Path, telegram: Telegram | None = None) -> None:
+    def __init__(
+        self,
+        gateway: GatewayClient,
+        state_dir: Path,
+        telegram: Telegram | None = None,
+        review_writer: Any = None,
+    ) -> None:
         self.gateway = gateway
         self.state_dir = Path(state_dir)
         self.state_file = self.state_dir / "notifier.json"
         self.telegram = telegram
+        self.review_writer = review_writer or write_review
 
     def _state(self) -> dict[str, Any]:
         try:
@@ -295,6 +304,13 @@ class Notifier:
             pf, start, runner, reviews, CandleStore(self.state_dir / "history").load("BTC/USDT", "4h")
         )
         self.telegram.send(weekly_report(pf, scores, now, start, ready))
+        # Optional second message: Claude's written review (only with an Anthropic key).
+        summary = week_summary(pf, ready, scores, reviews, Tuner(self.state_dir).load())
+        text = self.review_writer(summary)
+        if text:
+            self.telegram.send(
+                "🧠 Analiza săptămânii (Claude, doar propuneri - nu se aplică nimic automat):\n" + text
+            )
 
     def run_forever(self) -> None:
         configured_logged = None

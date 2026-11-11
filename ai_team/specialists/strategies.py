@@ -83,6 +83,8 @@ def _signal_from_rule(ctx: AgentContext, name: str, why: str, confidence: float)
     pos = STRATEGY_RULES[name](df)
     price = float(df["close"].iloc[-1])
     a = float(ind.atr(df).iloc[-1])
+    # Exit levels re-tuned weekly (ai_team.tuning) when unseen data supported it.
+    sl_atr, tp_atr = (ctx.task.params.get("exit_levels") or {}).get(name, (STOP_ATR, TAKE_PROFIT_ATR))
     now, before = int(pos.iloc[-1]), int(pos.iloc[-2])
     signals: list[Signal] = []
     if now == 1:
@@ -94,8 +96,8 @@ def _signal_from_rule(ctx: AgentContext, name: str, why: str, confidence: float)
                 source="",
                 rationale=why + (" (fresh entry)" if before == 0 else " (position held)"),
                 entry_price=price,
-                stop_loss=price - STOP_ATR * a,
-                take_profit=price + TAKE_PROFIT_ATR * a,
+                stop_loss=price - sl_atr * a,
+                take_profit=price + tp_atr * a,
                 strategy=name,
             )
         )
@@ -120,6 +122,7 @@ def _signal_from_rule(ctx: AgentContext, name: str, why: str, confidence: float)
             "fresh_entry": now == 1 and before == 0,
             "atr": a,
             "price": price,
+            "exit_levels_atr": [sl_atr, tp_atr],
             "exposure_ratio": float(pos.mean()),
         },
         signals,

@@ -76,6 +76,20 @@ gateway limit.
   how much each source counts in the composite sentiment, which nudges consensus confidence
   by at most 0.05, like order flow and technicals.
 
+### Controlled self-improvement
+
+- **Weekly re-tuning** (`ai_team.tuning`, run by the runner once every 7 days): for each pair and
+  rule-based strategy, the stop-loss and take-profit distances (1.5-3 x ATR and 2-5 x ATR) are
+  chosen on the first 70 % of the candle history. The choice is adopted only if, on the final
+  30 % that played no part in choosing, its Sharpe beats the default levels by at least 0.25 and
+  it makes money; otherwise the defaults (2 x / 3 x ATR) stay. Results are in
+  `state/tuned_params.json`. The strategists and the backtests both use the adopted levels.
+  Rules, review standards and gateway limits never change by themselves.
+- **Weekly review by Claude** (`ai_team.llm_review`, with an Anthropic key and Telegram): after
+  the numeric weekly report, Claude writes a short review in Romanian from a numbers-only
+  summary (results, readiness criteria, track records, strategy verdicts, re-tuning). It only
+  proposes changes for the owner to approve; nothing is applied automatically.
+
 ### Running non-stop
 
 `ai_team/system.sh` and `ai_team/system.ps1` start one **supervisor** (`python -m ai_team.supervisor`).

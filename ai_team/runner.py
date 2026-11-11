@@ -33,6 +33,7 @@ from .models import utcnow
 from .runtime import DEFAULT_TIMEFRAME, DEFAULT_UNIVERSE
 from .specs import SPECS
 from .state import DEFAULT_STATE_DIR, StateStore
+from .tuning import Tuner
 
 
 MARKET_HISTORY = 720  # points per pair kept for the dashboard (2h at 10s)
@@ -161,8 +162,21 @@ class Runner:
             self.status["current_cycle"] = {"started_at": started_at, "pairs": self.pairs}
             self.status["state"] = "cycle-running"
         self._save_status()
+        data = self._data()
+        tuner = Tuner(self.state_dir)
+        if tuner.due(self.timeframe):
+            try:
+                tuned = tuner.run(data, self.pairs, self.timeframe)
+                self.state.record_decision(
+                    "retuning", adopted=tuned["adopted"], tested=tuned["tested"], errors=tuned["errors"]
+                )
+                log.info(
+                    "weekly re-tuning: %s of %s exit-level sets adopted", tuned["adopted"], tuned["tested"]
+                )
+            except Exception:  # tuning is an optimisation; the cycle runs with the previous levels
+                log.exception("weekly re-tuning failed")
         coord = Coordinator(
-            self._data(), self.gateway, self.state, MessageBus(self.state.messages_file), universe=self.pairs
+            data, self.gateway, self.state, MessageBus(self.state.messages_file), universe=self.pairs
         )
         try:
             if self.use_langgraph:

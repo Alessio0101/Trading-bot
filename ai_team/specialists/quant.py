@@ -295,6 +295,7 @@ def backtesting_specialist(ctx: AgentContext) -> HandlerResult:
     # Discretionary strategies (event-driven, pairs) have no deterministic rule to
     # replay; they are reported as untestable so the reviewer rejects them.
     untestable = sorted(n for n in names if n not in STRATEGY_RULES)
+    levels = ctx.task.params.get("exit_levels") or {}
     split = int(len(df) * (1 - OOS_FRACTION))
     results = {}
     for n in names:
@@ -303,8 +304,12 @@ def backtesting_specialist(ctx: AgentContext) -> HandlerResult:
         # Signals use the full history for indicator warm-up; the out-of-sample
         # metrics only score the final, unseen segment.
         pos = STRATEGY_RULES[n](df)
-        m = backtest_with_stops(df, pos, ctx.task.timeframe)
-        m["out_of_sample"] = backtest_with_stops(df.iloc[split:], pos.iloc[split:], ctx.task.timeframe)
+        sl, tp = levels.get(n, (STOP_ATR, TAKE_PROFIT_ATR))
+        m = backtest_with_stops(df, pos, ctx.task.timeframe, sl, tp)
+        m["out_of_sample"] = backtest_with_stops(
+            df.iloc[split:], pos.iloc[split:], ctx.task.timeframe, sl, tp
+        )
+        m["exit_levels_atr"] = [sl, tp]
         # The plain signal-only replay is kept for comparison; the review uses the above.
         m["without_stops"] = backtest(df, pos, ctx.task.timeframe)
         results[n] = m

@@ -22,6 +22,7 @@ from .runtime import DEFAULT_UNIVERSE, AgentContext, run_specialist
 from .specs import COORDINATOR_ID, WORKFLOWS
 from .state import StateStore
 from .track_record import SignalLedger
+from .tuning import Tuner
 
 
 log = logging.getLogger(__name__)
@@ -227,7 +228,10 @@ class Coordinator:
             ]
             for f in futs:
                 inbox |= f.result()
-        inbox |= self.run_parallel(STAGE_STRATEGIES, "propose trades", pair, tf, inbox, **kw)
+        levels = Tuner(self.state.dir).exit_levels(pair, tf)
+        inbox |= self.run_parallel(
+            STAGE_STRATEGIES, "propose trades", pair, tf, inbox, params={"exit_levels": levels}, **kw
+        )
         self._compare(cycle_id, pair, inbox)
         try:
             self.ledger.record(inbox, pair, tf, self.data)
@@ -262,6 +266,7 @@ class Coordinator:
             pair,
             tf,
             {"quantitative-researcher": _with_candidates(qr, cands)} if qr else {},
+            params={"exit_levels": levels},
             **kw,
         )
         rev = self.assign(
