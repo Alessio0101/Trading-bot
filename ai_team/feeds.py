@@ -108,13 +108,23 @@ class PublicFeeds:
                 time.sleep(0.5 * (attempt + 1))
         raise FeedUnavailable(f"{url} unavailable: {last}")
 
+    FAILURE_TTL_S = 600  # a feed that just failed is not retried for this long
+
     def _cached(self, key: str, fn, ttl: float | None = None):
         now = time.monotonic()
         with self._lock:
             hit = self._cache.get(key)
-            if hit and now - hit[0] < (ttl or self.TTL_S):
+            if hit and isinstance(hit[1], FeedUnavailable):
+                if now - hit[0] < self.FAILURE_TTL_S:
+                    raise hit[1]  # do not hammer a feed that is down (once per pair per cycle)
+            elif hit and now - hit[0] < (ttl or self.TTL_S):
                 return hit[1]
-        value = fn()
+        try:
+            value = fn()
+        except FeedUnavailable as e:
+            with self._lock:
+                self._cache[key] = (time.monotonic(), e)
+            raise
         with self._lock:
             self._cache[key] = (time.monotonic(), value)
         return value

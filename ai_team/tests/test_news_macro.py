@@ -429,3 +429,18 @@ def test_aggregation_adds_a_small_crowd_bias():
         return run_specialist("signal-aggregation-specialist", ctx).metrics["proposals"][0]["confidence"]
 
     assert agg(1.0) - agg(0.0) == pytest.approx(0.05) and agg(-1.0) < agg(0.0)
+
+
+def test_a_failed_feed_is_not_retried_for_a_while(monkeypatch):
+    opener = RouteOpener({})
+    feeds = PublicFeeds(opener=opener)
+    with pytest.raises(FeedUnavailable):
+        feeds.fear_greed()
+    calls = len(opener.urls)
+    with pytest.raises(FeedUnavailable):
+        feeds.fear_greed()  # served from the failure cache
+    assert len(opener.urls) == calls
+    monkeypatch.setattr(PublicFeeds, "FAILURE_TTL_S", 0)
+    with pytest.raises(FeedUnavailable):
+        feeds.fear_greed()
+    assert len(opener.urls) > calls
