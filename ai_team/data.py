@@ -9,15 +9,21 @@ source used by tests and as an explicit fallback.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
 
+from .history import CandleStore
+
+
+log = logging.getLogger(__name__)
 
 TIMEFRAME_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "4h": 240, "1d": 1440}
 
@@ -55,10 +61,18 @@ class KrakenPublicData:
     _throttle_lock = threading.Lock()
     _last_call = 0.0
 
-    def __init__(self, timeout: float = 15.0, opener: urllib.request.OpenerDirector | None = None) -> None:
+    def __init__(
+        self,
+        timeout: float = 15.0,
+        opener: urllib.request.OpenerDirector | None = None,
+        history_dir: Path | None = None,
+    ) -> None:
         self.timeout = timeout
         self._cache: dict[tuple, Any] = {}
         self._opener = opener or urllib.request.build_opener()
+        # With a history directory, every download is merged into a local candle store,
+        # so research sees more than Kraken's 720-candle window as the system keeps running.
+        self.history = CandleStore(history_dir) if history_dir else None
         from .feeds import PublicFeeds
 
         self.feeds = PublicFeeds()
@@ -141,6 +155,11 @@ class KrakenPublicData:
             )
             df["date"] = pd.to_datetime(df["time"], unit="s", utc=True)
             df = df.set_index("date")[["open", "high", "low", "close", "volume"]].astype(float)
+            if self.history is not None:
+                try:
+                    df = self.history.merge(pair, timeframe, df, TIMEFRAME_MINUTES[timeframe])
+                except (OSError, ValueError) as e:  # history is an optimisation, never a blocker
+                    log.warning("candle history for %s %s not updated: %s", pair, timeframe, e)
             self._cache[key] = df
         return self._cache[key].tail(limit)
 

@@ -120,7 +120,9 @@ class Runner:
 
     # ---------------- helpers ----------------
     def _data(self) -> MarketData:
-        return KrakenPublicData() if self.data_kind == "kraken" else SyntheticMarketData()
+        if self.data_kind == "kraken":
+            return KrakenPublicData(history_dir=self.state_dir / "history")
+        return SyntheticMarketData()
 
     def _save_status(self) -> None:
         with self._lock:

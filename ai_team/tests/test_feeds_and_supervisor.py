@@ -233,7 +233,8 @@ class TestRepairedAgents:
         assert r.status == "ok", r.summary
         m = r.metrics
         assert m["algorithm"] == "tabular Q-learning" and m["research_only"] is True
-        assert m["out_of_sample"]["bars"] == 720 - int(720 * 0.7)
+        n = len(market.ohlcv("BTC/USDT", "1h", 3000))  # all synthetic history
+        assert m["out_of_sample"]["bars"] == n - int(n * 0.7)
         oos, hold = m["out_of_sample"], m["baseline_buy_hold"]
         assert m["beats_buy_hold"] == (oos["total_return"] > hold["total_return"])
         assert set(m["learned_policy_when_flat"].values()) <= {"long", "flat"}

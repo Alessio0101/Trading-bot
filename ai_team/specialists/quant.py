@@ -52,10 +52,13 @@ STRATEGY_HYPOTHESIS = {
     "mean_reversion": "reversal_6",
 }
 OOS_FRACTION = 0.3
+# Research reads up to this many candles. Kraken returns 720; the local candle store
+# (ai_team/history.py) adds more every day the system runs.
+HISTORY_BARS = 3000
 
 
 def quantitative_researcher(ctx: AgentContext) -> HandlerResult:
-    c = ctx.ohlcv(limit=720)["close"]
+    c = ctx.ohlcv(limit=HISTORY_BARS)["close"]
     fwd = c.pct_change(6).shift(-6)
     results = {}
     for name, f in HYPOTHESES.items():
@@ -164,7 +167,7 @@ def machine_learning_researcher(ctx: AgentContext) -> HandlerResult:
             "scikit-learn is not installed (pip install -r ai_team/requirements.txt)"
         ) from e
 
-    df = ctx.ohlcv(limit=720)
+    df = ctx.ohlcv(limit=HISTORY_BARS)
     feats = _ml_features(df)
     target = (df["close"].shift(-ML_HORIZON) > df["close"]).astype(int)
     data = feats.assign(target=target).iloc[:-ML_HORIZON].dropna()
@@ -216,7 +219,7 @@ def backtesting_specialist(ctx: AgentContext) -> HandlerResult:
         if qr and qr.status == "ok"
         else ctx.task.params.get("strategies", list(STRATEGY_RULES))
     )
-    df = ctx.ohlcv(limit=720)
+    df = ctx.ohlcv(limit=HISTORY_BARS)
     # Discretionary strategies (event-driven, pairs) have no deterministic rule to
     # replay; they are reported as untestable so the reviewer rejects them.
     untestable = sorted(n for n in names if n not in STRATEGY_RULES)

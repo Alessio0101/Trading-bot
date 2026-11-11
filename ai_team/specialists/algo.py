@@ -13,7 +13,7 @@ import pandas as pd
 
 from .. import indicators as ind
 from ..runtime import AgentContext, HandlerResult
-from .quant import FEE, SLIPPAGE, backtest
+from .quant import FEE, HISTORY_BARS, SLIPPAGE, backtest
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -117,7 +117,7 @@ def signal_aggregation_specialist(ctx: AgentContext) -> HandlerResult:
 
 
 def parameter_optimisation_specialist(ctx: AgentContext) -> HandlerResult:
-    df = ctx.ohlcv(limit=720)
+    df = ctx.ohlcv(limit=HISTORY_BARS)
     split = int(len(df) * 0.7)
     ins, oos = df.iloc[:split], df.iloc[split - 200 :]  # warm-up overlap for indicators
 
@@ -220,7 +220,7 @@ def reinforcement_learning_researcher(ctx: AgentContext) -> HandlerResult:
     It trains on the first 70 % of bars and is scored on the unseen final 30 %
     against buy-and-hold and staying flat.
     """
-    df = ctx.ohlcv(limit=720)
+    df = ctx.ohlcv(limit=HISTORY_BARS)
     states = _rl_states(df)
     rets = df["close"].pct_change().shift(-1).fillna(0).to_numpy()  # return earned after acting
     cost = FEE + SLIPPAGE
