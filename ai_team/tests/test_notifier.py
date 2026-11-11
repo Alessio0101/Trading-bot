@@ -38,6 +38,10 @@ class FakeGateway:
     def __init__(self):
         self.decision_list = []
         self.pf = {"positions": {}, "equity": 10_100.0, "history": [], "realised": [], "unrealised": {}}
+        self.up = True
+
+    def health(self):
+        return {"ok": self.up}
 
     def decisions(self):
         return list(self.decision_list)
@@ -171,10 +175,20 @@ class TestTelegram:
         assert nt.load_config(p) is None
 
 
+def write_healthy_state(state_dir, now):
+    ts = now.isoformat()
+    (state_dir / "runner.json").write_text(json.dumps({"heartbeat": ts, "last_cycle": {"ok": True}}))
+    (state_dir / "market.json").write_text(json.dumps({"ts": ts, "ok": True}))
+    (state_dir / "agents.json").write_text(json.dumps({f"a{i}": {"online": True} for i in range(50)}))
+
+
 class TestNotifier:
-    def make(self, tmp_path):
+    def make(self, tmp_path, healthy=True):
         http, gw = FakeTelegramHTTP(), FakeGateway()
+        if healthy:
+            write_healthy_state(tmp_path, NOW)
         n = nt.Notifier(gw, tmp_path, nt.Telegram(TOKEN, "42", opener=http), review_writer=lambda s: None)
+        n.daily_hour = 24  # no daily message unless a test asks for it
         return n, gw, http
 
     def texts(self, http):
@@ -217,11 +231,16 @@ class TestNotifier:
 
     def test_weekly_report_when_due(self, tmp_path):
         n, _gw, http = self.make(tmp_path)
-        n.tick(NOW)
-        assert n.tick(NOW + timedelta(days=6)) == 0
-        assert n.tick(NOW + timedelta(days=7)) == 1
+
+        def tick_at(days):
+            write_healthy_state(tmp_path, NOW + timedelta(days=days))  # the system kept running
+            return n.tick(NOW + timedelta(days=days))
+
+        tick_at(0)
+        assert tick_at(6) == 0
+        assert tick_at(7) == 1
         assert "RAPORT SĂPTĂMÂNAL" in self.texts(http)[-1]
-        assert n.tick(NOW + timedelta(days=8)) == 0
+        assert tick_at(8) == 0
 
     def test_claude_review_follows_the_report_when_available(self, tmp_path):
         n, _gw, http = self.make(tmp_path)
@@ -231,6 +250,69 @@ class TestNotifier:
         texts = self.texts(http)
         assert "RAPORT" in texts[-2] and texts[-1].startswith("🧠") and "linistita" in texts[-1]
         assert {"equity", "readiness", "track_record", "strategy_verdicts", "tuning"} <= set(seen[0])
+
+    def test_problem_reported_after_grace_and_cleared_once(self, tmp_path):
+        n, gw, http = self.make(tmp_path)
+        n.tick(NOW)  # first run
+        gw.up = False
+        assert n.tick(NOW + timedelta(minutes=1)) == 0  # a quick restart is not reported
+        assert n.tick(NOW + timedelta(minutes=6)) == 1
+        assert "PROBLEMĂ" in self.texts(http)[-1] and "gateway" in self.texts(http)[-1]
+        assert n.tick(NOW + timedelta(minutes=7)) == 0  # reported once
+        gw.up = True
+        assert n.tick(NOW + timedelta(minutes=8)) == 1
+        assert self.texts(http)[-1].startswith("✅ Rezolvat")
+
+    def test_short_problem_is_never_reported(self, tmp_path):
+        n, gw, http = self.make(tmp_path)
+        n.tick(NOW)
+        gw.up = False
+        n.tick(NOW + timedelta(minutes=1))
+        gw.up = True
+        assert n.tick(NOW + timedelta(minutes=2)) == 0
+        assert len(self.texts(http)) == 1  # only the start-up message
+
+    @pytest.mark.parametrize(
+        ("change", "expected"),
+        [
+            ("runner_silent", "nu mai răspunde"),
+            ("cycle_failed", "a eșuat"),
+            ("market_stale", "Kraken"),
+            ("drawdown", "a scăzut"),
+            ("no_runner", "nu a pornit"),
+        ],
+    )
+    def test_each_problem_kind(self, tmp_path, change, expected):
+        n, gw, _http = self.make(tmp_path)
+        later = NOW + timedelta(minutes=30)
+        write_healthy_state(tmp_path, later)
+        if change == "runner_silent":
+            (tmp_path / "runner.json").write_text(
+                json.dumps({"heartbeat": NOW.isoformat(), "last_cycle": {"ok": True}})
+            )
+        elif change == "cycle_failed":
+            (tmp_path / "runner.json").write_text(
+                json.dumps({"heartbeat": later.isoformat(), "last_cycle": {"ok": False, "error": "boom"}})
+            )
+        elif change == "market_stale":
+            (tmp_path / "market.json").write_text(json.dumps({"ts": NOW.isoformat(), "ok": True}))
+        elif change == "drawdown":
+            gw.pf["drawdown_pct"] = -0.09
+        else:
+            (tmp_path / "runner.json").unlink()
+        problems = n.problems(later)
+        assert len(problems) == 1 and expected in next(iter(problems.values()))
+
+    def test_daily_status_once_a_day_after_the_hour(self, tmp_path):
+        n, _gw, http = self.make(tmp_path)
+        n.tick(NOW)
+        n.daily_hour = NOW.astimezone().hour  # due now, whatever the test machine's time zone
+        assert n.tick(NOW) == 1
+        text = self.texts(http)[-1]
+        assert text.startswith("✅ Botul merge.") and "Agenți online: 50/50" in text and "10,100.00" in text
+        assert n.tick(NOW + timedelta(hours=1)) == 0  # once per day
+        write_healthy_state(tmp_path, NOW + timedelta(days=1))
+        assert n.tick(NOW + timedelta(days=1)) == 1
 
     def test_unconfigured_notifier_does_nothing(self, tmp_path):
         assert nt.Notifier(FakeGateway(), tmp_path).tick(NOW) == 0

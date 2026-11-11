@@ -44,6 +44,11 @@ API = "https://api.telegram.org"
 POLL_S = 30
 REPORT_EVERY = timedelta(days=7)
 MAX_SEEN = 500
+PROBLEM_GRACE_S = 300  # a problem must last 5 minutes before it is reported (restarts are quick)
+RUNNER_SILENT_S = 600
+MARKET_STALE_S = 300
+DRAWDOWN_WARN = -0.08
+DAILY_HOUR = 9
 
 
 class TelegramError(RuntimeError):
@@ -158,6 +163,14 @@ def describe_decision(d: dict[str, Any], positions: dict[str, Any]) -> str | Non
     return None
 
 
+def _read_json(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _parse(ts: str | None) -> datetime | None:
     try:
         return datetime.fromisoformat(ts) if ts else None
@@ -231,6 +244,7 @@ class Notifier:
         self.state_file = self.state_dir / "notifier.json"
         self.telegram = telegram
         self.review_writer = review_writer or write_review
+        self.daily_hour = DAILY_HOUR
 
     def _state(self) -> dict[str, Any]:
         try:
@@ -247,10 +261,15 @@ class Notifier:
             return 0
         now = now or datetime.now(UTC)
         st = self._state()
-        decisions = self.gateway.decisions()
+        try:
+            decisions = self.gateway.decisions()
+        except (OSError, ValueError):
+            decisions = None  # gateway down: reported by check_health below
         key = lambda d: f"{d.get('ts')}|{d.get('proposal_id')}"  # noqa: E731
         sent = 0
         if "seen" not in st:
+            if decisions is None:
+                return 0
             # First run: announce, and do not replay trades that happened before setup.
             st = {"seen": [key(d) for d in decisions][-MAX_SEEN:], "last_report": now.isoformat()}
             self.telegram.send(
@@ -262,7 +281,9 @@ class Notifier:
         seen = set(st["seen"])
         positions = (self.gateway.portfolio() or {}).get("positions") or {}
         try:
-            for d in decisions:
+            sent += self.check_health(st, now)
+            sent += self.daily_status(st, now)
+            for d in decisions or []:
                 k = key(d)
                 if k in seen:
                     continue
@@ -281,6 +302,84 @@ class Notifier:
             st["seen"] = st["seen"][-MAX_SEEN:]
             self._save(st)
         return sent
+
+    # ---------------- problems and the daily "all good" ----------------
+    def problems(self, now: datetime) -> dict[str, str]:
+        """Current problems, keyed so each one is reported once and cleared once."""
+        found: dict[str, str] = {}
+        if not self.gateway.health().get("ok"):
+            found["gateway"] = "Controlul de risc (gateway) nu răspunde."
+        runner = _read_json(self.state_dir / "runner.json")
+        beat = _parse((runner or {}).get("heartbeat"))
+        if runner is None or beat is None:
+            found["runner"] = "Partea care rulează agenții (runner) nu a pornit."
+        elif (now - beat).total_seconds() > RUNNER_SILENT_S:
+            found["runner"] = f"Runner-ul nu mai răspunde de {(now - beat).total_seconds() / 60:.0f} minute."
+        else:
+            last = (runner or {}).get("last_cycle") or {}
+            if last and not last.get("ok"):
+                found["cycle"] = f"Ultimul ciclu al agenților a eșuat: {str(last.get('error'))[:200]}"
+        market = _read_json(self.state_dir / "market.json")
+        mts = _parse((market or {}).get("ts"))
+        if (
+            market is None
+            or mts is None
+            or not market.get("ok")
+            or (now - mts).total_seconds() > MARKET_STALE_S
+        ):
+            found["market"] = "Prețurile de la Kraken nu mai vin (internet sau Kraken indisponibil)."
+        pf = self.gateway.portfolio() or {}
+        dd = pf.get("drawdown_pct")
+        if dd is not None and dd <= DRAWDOWN_WARN:
+            found["drawdown"] = (
+                f"Contul de test a scăzut {dd * 100:.1f}% de la maxim (limita de siguranță: 10%)."
+            )
+        return found
+
+    def check_health(self, st: dict[str, Any], now: datetime) -> int:
+        """Alert when a problem has lasted PROBLEM_GRACE_S; say so once it is gone."""
+        current = self.problems(now)
+        active = st.setdefault("problems", {})
+        sent = 0
+        for k, text in current.items():
+            p = active.setdefault(k, {"since": now.isoformat(), "sent": False})
+            p["text"] = text
+            since = _parse(p["since"]) or now
+            if not p["sent"] and (now - since).total_seconds() >= PROBLEM_GRACE_S:
+                self.telegram.send(
+                    f"⚠️ PROBLEMĂ: {text}\n"
+                    "Botul încearcă singur să se repare. Dacă durează, scrie-i lui Claude."
+                )
+                p["sent"] = True
+                sent += 1
+        for k in [k for k in active if k not in current]:
+            if active[k].get("sent"):
+                self.telegram.send(f"✅ Rezolvat: {active[k].get('text', k)}")
+                sent += 1
+            del active[k]
+        return sent
+
+    def daily_status(self, st: dict[str, Any], now: datetime) -> int:
+        """One short "all good" message a day, from DAILY_HOUR local time."""
+        local = now.astimezone()
+        today = local.date().isoformat()
+        if local.hour < self.daily_hour or st.get("last_daily") == today:
+            return 0
+        st["last_daily"] = today
+        pf = self.gateway.portfolio() or {}
+        agents = _read_json(self.state_dir / "agents.json") or {}
+        online = sum(1 for a in agents.values() if a.get("online"))
+        problems = [p.get("text") for p in (st.get("problems") or {}).values() if p.get("sent")]
+        head = "✅ Botul merge." if not problems else "⚠️ Botul merge, dar sunt probleme active:"
+        lines = [head]
+        lines += [f"  · {p}" for p in problems]
+        if pf.get("equity") is not None:
+            open_n = len(pf.get("positions") or {})
+            lines.append(f"Cont (pe hârtie): {_money(pf['equity'])} USDT · poziții deschise: {open_n}")
+        lines.append(f"Agenți online: {online}/{len(agents) or 50}")
+        lines.append("Dacă într-o zi nu primești acest mesaj, verifică dacă e pornit calculatorul.")
+        self.telegram.send("\n".join(lines))
+        return 1
 
     def send_report(self, now: datetime | None = None) -> None:
         if self.telegram is None:
