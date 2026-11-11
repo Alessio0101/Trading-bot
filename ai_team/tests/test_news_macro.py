@@ -4,6 +4,7 @@ import io
 import json
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
 from ai_team import keys, llm_news, local_config
@@ -281,3 +282,150 @@ def test_keys_are_read_without_echo(monkeypatch):
     assert len(prompts) == 2 and "Anthropic" in prompts[0] and "FRED" in prompts[1]
     assert keys.mask("sk-ant-abcdefgh1234") == "...1234 (19 caractere)"
     assert keys.mask("short") == "(5 caractere)"
+
+
+# ---------------- crowd sources: Fear & Greed, futures, Reddit, podcasts ----------------
+
+PODCAST_RSS = b"""<?xml version="1.0"?><rss><channel><title>p</title>
+<item><title>Bitcoin adoption keeps growing</title>
+<description>&lt;p&gt;Big &lt;b&gt;inflows&lt;/b&gt;&lt;/p&gt;</description></item>
+<item><title>Second episode</title></item></channel></rss>"""
+
+
+class RouteOpener:
+    def __init__(self, routes):
+        self.routes = routes
+        self.urls = []
+
+    def open(self, req, timeout=None):
+        self.urls.append(req.full_url)
+        for prefix, body in self.routes.items():
+            if req.full_url.startswith(prefix):
+                if isinstance(body, Exception):
+                    raise body
+                return io.BytesIO(body if isinstance(body, bytes) else json.dumps(body).encode())
+        raise OSError(f"no route for {req.full_url}")
+
+
+class TestCrowdFeeds:
+    def test_fear_greed(self):
+        body = {"data": [{"value": "20", "value_classification": "Extreme Fear"}, {"value": "55"}]}
+        fg = PublicFeeds(opener=RouteOpener({"https://api.alternative.me": body})).fear_greed()
+        assert fg == {"value": 20, "label": "Extreme Fear", "week_ago": 55}
+
+    def test_derivatives_funding_is_relative_and_annualised(self):
+        body = {
+            "tickers": [
+                {"symbol": "PF_XBTUSD", "markPrice": 100000, "fundingRate": 1.0, "openInterest": 5},
+                {"symbol": "PF_ETHUSD", "markPrice": 0},
+            ]
+        }
+        d = PublicFeeds(opener=RouteOpener({"https://futures.kraken.com": body})).derivatives()
+        assert set(d) == {"BTC"}
+        assert d["BTC"]["funding_annualised"] == pytest.approx(1.0 / 100000 * 24 * 365)
+
+    def test_reddit_skips_stickies_and_tolerates_one_subreddit_down(self):
+        posts = {
+            "data": {
+                "children": [
+                    {"data": {"title": "Rules thread", "stickied": True}},
+                    {"data": {"title": "Bitcoin  rally   continues", "score": 900}},
+                ]
+            }
+        }
+        opener = RouteOpener(
+            {
+                "https://www.reddit.com/r/CryptoCurrency": posts,
+                "https://www.reddit.com/r/Bitcoin": OSError("429"),
+            }
+        )
+        r = PublicFeeds(opener=opener).reddit()
+        assert [p["title"] for p in r["posts"]] == ["Bitcoin rally continues"]
+        assert "Bitcoin" in r["errors"]
+
+    def test_podcasts_are_found_via_search_and_notes_are_plain_text(self):
+        search = {"results": [{"feedUrl": "https://pod.example/feed"}]}
+        opener = RouteOpener({"https://itunes.apple.com": search, "https://pod.example/feed": PODCAST_RSS})
+        p = PublicFeeds(opener=opener).podcasts(per_show=1)
+        first = p["episodes"][0]
+        assert first["title"] == "Bitcoin adoption keeps growing" and first["notes"] == "Big inflows"
+        assert len(p["episodes"]) == 5  # one per show, the same test feed for every show
+
+    def test_everything_down(self):
+        feeds = PublicFeeds(opener=RouteOpener({}))
+        for call in (feeds.fear_greed, feeds.derivatives, feeds.reddit, feeds.podcasts):
+            with pytest.raises(FeedUnavailable):
+                call()
+
+
+class TestCompositeSentiment:
+    def run(self, weights=None):
+        market = SyntheticMarketData()
+        news = Report(
+            "news-analyst", "t", "ok", "s", metrics={"headlines": [{"headline": "Bitcoin rally continues"}]}
+        )
+        params = {"source_weights": weights or {}}
+        ctx = AgentContext(
+            Task("sentiment-analyst", "t", "BTC/USDT", "4h", params), market, {"news-analyst": news}
+        )
+        return run_specialist("sentiment-analyst", ctx)
+
+    def test_components_views_and_contrarian_reading(self):
+        m = self.run().metrics
+        c = m["components"]
+        assert set(c) == {"news", "reddit", "podcasts", "fear_greed", "funding"}
+        assert c["fear_greed"] == pytest.approx((50 - 30) / 40)  # fear -> bullish
+        assert c["funding"] == pytest.approx(-0.08 / 0.3)  # longs paying -> bearish
+        assert m["source_views"]["fear_greed"] == 1 and m["source_views"]["funding"] == -1
+        assert m["sentiment"] == pytest.approx(sum(c.values()) / 5)
+        assert m["source_errors"] == {}
+
+    def test_learned_weights_shift_the_composite(self):
+        even = self.run().metrics["sentiment"]
+        tilted = self.run({"source:funding": 1.25, "source:fear_greed": 0.75}).metrics
+        assert tilted["source_weights"]["funding"] == 1.25 and tilted["sentiment"] < even
+
+
+def test_ledger_scores_bearish_views_when_price_falls(tmp_path):
+    from ai_team.track_record import ROUND_TRIP_COST, SignalLedger
+
+    class Falling:
+        name = "test"
+
+        def __init__(self, n):
+            idx = pd.date_range("2026-01-01", periods=30, freq="4h", tz="UTC")
+            self.df = pd.DataFrame({"close": [100.0] * 5 + [90.0] * 25}, index=idx).iloc[:n]
+
+        def ohlcv(self, pair, timeframe="4h", limit=500):
+            return self.df.tail(limit)
+
+    ledger = SignalLedger(tmp_path / "l.json")
+    assert ledger.record_views({"funding": -1, "reddit": 1, "news": 0}, "BTC/USDT", "4h", Falling(5)) == 2
+    ledger.evaluate(Falling(30), now=pd.Timestamp("2026-01-10", tz="UTC"))
+    s = ledger.scores()
+    assert s["source:funding"]["wins"] == 1 and s["source:reddit"]["wins"] == 0
+    assert s["source:funding"]["avg_net_return"] == pytest.approx(0.10 - ROUND_TRIP_COST)
+
+
+def test_aggregation_adds_a_small_crowd_bias():
+    from ai_team.models import Signal
+
+    def agg(sentiment):
+        inbox = {
+            "momentum-strategist": Report(
+                "momentum-strategist",
+                "t",
+                "ok",
+                "s",
+                signals=[Signal("BTC/USDT", "long", 0.6, "momentum-strategist", "x", strategy="momentum")],
+            ),
+            "sentiment-analyst": Report(
+                "sentiment-analyst", "t", "ok", "s", metrics={"sentiment": sentiment}
+            ),
+        }
+        ctx = AgentContext(
+            Task("signal-aggregation-specialist", "t", "BTC/USDT", "4h", {}), SyntheticMarketData(), inbox
+        )
+        return run_specialist("signal-aggregation-specialist", ctx).metrics["proposals"][0]["confidence"]
+
+    assert agg(1.0) - agg(0.0) == pytest.approx(0.05) and agg(-1.0) < agg(0.0)

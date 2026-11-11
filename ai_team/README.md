@@ -70,6 +70,11 @@ gateway limit.
   becomes a vote weight between 0.75 and 1.25 in signal aggregation. A good record can raise a
   vote, but never above the strongest confidence a supporting agent reported. The reviews and
   gateway limits are unchanged. The Performance tab shows the record.
+- **Source record.** The sentiment analyst's sources (news, Reddit, podcasts, Fear & Greed,
+  funding) each record a bullish or bearish view per candle as `source:<name>` and are
+  scored the same way, bearish views winning when the price falls. Their learned weights set
+  how much each source counts in the composite sentiment, which nudges consensus confidence
+  by at most 0.05, like order flow and technicals.
 
 ### Running non-stop
 
@@ -233,7 +238,11 @@ These need no account and no key, except the two optional ones marked below. Hea
 | Feed | Used by |
 |------|---------|
 | RSS: CoinDesk, Cointelegraph, Decrypt | news-analyst, then sentiment-analyst and event-driven-specialist |
-| Claude (optional Anthropic key) | sentiment-analyst |
+| Claude (optional Anthropic key) | sentiment-analyst (news, Reddit, podcasts) |
+| alternative.me Fear & Greed index | sentiment-analyst (read contrarian) |
+| Kraken Futures perpetual funding and open interest | sentiment-analyst (read contrarian) |
+| Reddit r/CryptoCurrency and r/Bitcoin top posts of the day | sentiment-analyst |
+| Crypto podcasts (Bankless, Unchained, Pomp, What Bitcoin Did, Coin Bureau) via the Apple Podcasts search API: titles and show notes | sentiment-analyst |
 | FRED (optional free key) | macro-economic-analyst |
 | CoinGecko `/coins/markets`, `/global` | fundamental-analyst, macro-economic-analyst |
 | Coinbase Exchange public tickers | arbitrage-strategist (Kraken vs Coinbase, net of fees) |
@@ -246,7 +255,8 @@ These need no account and no key, except the two optional ones marked below. Hea
 
 - **41 functional**: real computations on market data and the public feeds.
 - **9 partial** (they work, with a stated limitation):
-  - sentiment-analyst: Claude scores headlines only with an Anthropic key, otherwise a lexicon;
+  - sentiment-analyst: Claude scores text only with an Anthropic key, otherwise a lexicon;
+    podcasts are read from titles and show notes, not audio;
   - event-driven-specialist: event tags come from keyword rules;
   - macro-economic-analyst: US economic data only with a free FRED key, otherwise crypto-wide data;
   - scalping-strategist: REST polling;

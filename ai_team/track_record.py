@@ -86,6 +86,44 @@ class SignalLedger:
                 self._save(records)
         return new
 
+    def record_views(self, views: dict[str, int], pair: str, timeframe: str, data: MarketData) -> int:
+        """Store each data source's directional view (+1 bullish, -1 bearish) once per candle.
+
+        Sources are stored as "source:<name>" so their record sits next to the agents'. A
+        neutral view (0) is not stored.
+        """
+        views = {k: v for k, v in views.items() if v}
+        if not views:
+            return 0
+        candles = data.ohlcv(pair, timeframe, 5)
+        candle = candles.index[-1].isoformat()
+        price = float(candles["close"].iloc[-1])
+        with self._lock:
+            records = self._load()
+            seen = {(r["agent"], r["pair"], r["timeframe"], r["candle"]) for r in records}
+            new = 0
+            for name, view in views.items():
+                agent = f"source:{name}"
+                if (agent, pair, timeframe, candle) in seen:
+                    continue
+                records.append(
+                    {
+                        "agent": agent,
+                        "pair": pair,
+                        "timeframe": timeframe,
+                        "strategy": None,
+                        "side": "long" if view > 0 else "short",
+                        "candle": candle,
+                        "ts": utcnow(),
+                        "price": price,
+                        "outcome": None,
+                    }
+                )
+                new += 1
+            if new:
+                self._save(records)
+        return new
+
     def evaluate(self, data: MarketData, now: pd.Timestamp | None = None) -> int:
         """Score every signal whose horizon has fully passed; returns how many were scored."""
         now = now or pd.Timestamp.now(tz="UTC")
@@ -111,7 +149,9 @@ class SignalLedger:
                 if not len(past) or past.index[-1] < target - step:
                     continue  # no candle near the target (gap or data outage)
                 exit_price = float(past["close"].iloc[-1])
-                net = exit_price / r["price"] - 1 - ROUND_TRIP_COST
+                move = exit_price / r["price"] - 1
+                # A bearish view (side "short") is right when the price falls.
+                net = (-move if r.get("side") == "short" else move) - ROUND_TRIP_COST
                 r["outcome"] = {"exit_price": exit_price, "net_return": round(net, 6), "win": net > 0}
                 scored += 1
             if scored:

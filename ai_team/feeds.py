@@ -9,6 +9,11 @@ Free, key-less public data feeds for the agents that previously had no data.
 * economic     - FRED: Fed funds rate, CPI, 10-year Treasury yield, broad dollar index
                  (needs a free FRED API key saved with ``python -m ai_team.keys setup``)
 * headlines    - optional Claude scoring of headlines (ai_team.llm_news), with a saved key
+* fear & greed - alternative.me Crypto Fear & Greed Index
+* derivatives  - Kraken Futures perpetuals: funding rate and open interest
+* reddit       - today's top posts in r/CryptoCurrency and r/Bitcoin (titles only)
+* podcasts     - latest episode titles and show notes of well-known crypto podcasts,
+                 found through the Apple Podcasts search API (no audio is downloaded)
 
 Only FRED and Claude need a key, and both are optional. Headlines and other text from these
 feeds are untrusted data: they are only scored and displayed, never executed or
@@ -51,6 +56,15 @@ ASSET_NAMES = {
     "ADA": ["cardano", "ada"],
 }
 OPTION_ASSETS = {"BTC", "ETH"}
+FUTURES_SYMBOLS = {
+    "BTC": "PF_XBTUSD",
+    "ETH": "PF_ETHUSD",
+    "SOL": "PF_SOLUSD",
+    "XRP": "PF_XRPUSD",
+    "ADA": "PF_ADAUSD",
+}
+SUBREDDITS = ["CryptoCurrency", "Bitcoin"]
+PODCASTS = ["Bankless", "Unchained Laura Shin", "The Pomp Podcast", "What Bitcoin Did", "Coin Bureau Podcast"]
 
 
 class FeedUnavailable(RuntimeError):
@@ -69,10 +83,15 @@ class PublicFeeds:
         opener: urllib.request.OpenerDirector | None = None,
         timeout: float = 20.0,
         scorer: Any = None,
+        scorers: dict[str, Any] | None = None,
     ) -> None:
         self._opener = opener or urllib.request.build_opener()
         self.timeout = timeout
-        self.scorer = scorer  # ai_team.llm_news.ClaudeNewsScorer, when a key is configured
+        # ai_team.llm_news.ClaudeNewsScorer per text kind ("news", "reddit", "podcasts"),
+        # each with its own cache and hourly budget; only used when a key is configured.
+        self.scorers = dict(scorers or {})
+        if scorer is not None:
+            self.scorers.setdefault("news", scorer)
 
     def _fetch(self, url: str, retries: int = 2) -> bytes:
         last: Exception | None = None
@@ -232,10 +251,108 @@ class PublicFeeds:
         return self._cached(f"deribit-{asset}", load)
 
     # ---------------- headline scoring (Claude) ----------------
-    def headline_scores(self, headlines: list[str]) -> dict[str, dict[str, Any]]:
-        if self.scorer is None or not self.scorer.enabled:
+    def headline_scores(self, headlines: list[str], kind: str = "news") -> dict[str, dict[str, Any]]:
+        scorer = self.scorers.get(kind)
+        if scorer is None or not scorer.enabled:
             return {}
-        return self.scorer.scores(headlines)
+        return scorer.scores(headlines)
+
+    # ---------------- crowd and positioning ----------------
+    def fear_greed(self) -> dict[str, Any]:
+        def load():
+            data = self._json("https://api.alternative.me/fng/?limit=8")
+            rows = data.get("data") or []
+            if not rows:
+                raise FeedUnavailable("Fear & Greed index returned no data")
+            values = [int(r["value"]) for r in rows]
+            return {"value": values[0], "label": rows[0].get("value_classification"), "week_ago": values[-1]}
+
+        return self._cached("fear-greed", load, ttl=3600)
+
+    def derivatives(self) -> dict[str, dict[str, Any]]:
+        """Funding and open interest of Kraken's perpetual futures, by asset."""
+
+        def load():
+            data = self._json("https://futures.kraken.com/derivatives/api/v3/tickers")
+            by_symbol = {t.get("symbol"): t for t in data.get("tickers") or []}
+            out = {}
+            for asset, symbol in FUTURES_SYMBOLS.items():
+                t = by_symbol.get(symbol)
+                if not t or not t.get("markPrice"):
+                    continue
+                mark = float(t["markPrice"])
+                # Kraken reports the hourly funding rate in USD per contract; relative to the
+                # mark price and annualised it reads like a yearly cost of holding a long.
+                hourly = float(t.get("fundingRate") or 0.0) / mark
+                out[asset] = {
+                    "funding_annualised": hourly * 24 * 365,
+                    "open_interest": float(t.get("openInterest") or 0.0),
+                    "mark_price": mark,
+                }
+            if not out:
+                raise FeedUnavailable("Kraken Futures returned no perpetual tickers")
+            return out
+
+        return self._cached("kraken-futures", load, ttl=900)
+
+    def reddit(self) -> dict[str, Any]:
+        def load():
+            posts, errors = [], {}
+            for sub in SUBREDDITS:
+                try:
+                    data = self._json(f"https://www.reddit.com/r/{sub}/top.json?t=day&limit=25")
+                    for child in (data.get("data") or {}).get("children") or []:
+                        p = child.get("data") or {}
+                        title = re.sub(r"\s+", " ", (p.get("title") or "")).strip()[:300]
+                        if title and not p.get("stickied"):
+                            posts.append(
+                                {"title": title, "score": int(p.get("score") or 0), "subreddit": sub}
+                            )
+                except FeedUnavailable as e:
+                    errors[sub] = str(e)
+            if not posts:
+                raise FeedUnavailable(f"Reddit unreachable: {errors}")
+            return {"posts": posts, "errors": errors}
+
+        return self._cached("reddit", load, ttl=3600)
+
+    def podcasts(self, per_show: int = 3) -> dict[str, Any]:
+        def feed_url(name: str) -> str:
+            def find():
+                q = urllib.parse.quote(name)
+                data = self._json(f"https://itunes.apple.com/search?media=podcast&limit=1&term={q}")
+                results = data.get("results") or []
+                if not results or not results[0].get("feedUrl"):
+                    raise FeedUnavailable(f"podcast {name!r} not found")
+                return results[0]["feedUrl"]
+
+            return self._cached(f"podcast-url-{name}", find, ttl=7 * 86400)
+
+        def load():
+            episodes, errors = [], {}
+            for name in PODCASTS:
+                try:
+                    root = ET.fromstring(self._fetch(feed_url(name)))  # noqa: S314 - see _rss
+                    for item in list(root.iter("item"))[:per_show]:
+                        title = re.sub(r"\s+", " ", item.findtext("title") or "").strip()
+                        notes = re.sub(r"<[^>]+>", " ", item.findtext("description") or "")
+                        notes = re.sub(r"\s+", " ", notes).strip()[:400]
+                        if title:
+                            episodes.append(
+                                {
+                                    "show": name,
+                                    "title": title[:200],
+                                    "notes": notes,
+                                    "published": item.findtext("pubDate"),
+                                }
+                            )
+                except (FeedUnavailable, ET.ParseError) as e:
+                    errors[name] = str(e)[:200]
+            if not episodes:
+                raise FeedUnavailable(f"no podcast feed reachable: {errors}")
+            return {"episodes": episodes, "errors": errors}
+
+        return self._cached("podcasts", load, ttl=6 * 3600)
 
     # ---------------- economic data (FRED) ----------------
     def economic(self) -> dict[str, Any]:
@@ -347,8 +464,36 @@ class SyntheticFeeds:
             out[p] = {"last": last, "bid": last * 0.9999, "ask": last * 1.0001, "time": None}
         return out
 
-    def headline_scores(self, headlines: list[str]) -> dict[str, dict[str, Any]]:
+    def headline_scores(self, headlines: list[str], kind: str = "news") -> dict[str, dict[str, Any]]:
         return {}  # offline runs always use the lexicon
+
+    def fear_greed(self) -> dict[str, Any]:
+        return {"value": 30, "label": "Fear", "week_ago": 45}
+
+    def derivatives(self) -> dict[str, dict[str, Any]]:
+        return {
+            a: {"funding_annualised": 0.08, "open_interest": 1e6, "mark_price": 1.0} for a in FUTURES_SYMBOLS
+        }
+
+    def reddit(self) -> dict[str, Any]:
+        titles = ["Bitcoin rally continues as ETF inflows hit record", "Exchange hack: funds stolen"]
+        return {
+            "posts": [{"title": t, "score": 100, "subreddit": "CryptoCurrency"} for t in titles],
+            "errors": {},
+        }
+
+    def podcasts(self, per_show: int = 3) -> dict[str, Any]:
+        return {
+            "episodes": [
+                {
+                    "show": "synthetic",
+                    "title": "Why Bitcoin adoption keeps growing",
+                    "notes": "",
+                    "published": None,
+                }
+            ],
+            "errors": {},
+        }
 
     def economic(self) -> dict[str, Any]:
         return {

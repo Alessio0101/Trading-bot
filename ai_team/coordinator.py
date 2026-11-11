@@ -215,7 +215,9 @@ class Coordinator:
     def _cycle_pair(self, cycle_id, pair, tf, headlines, portfolio, health, submit) -> dict:
         kw = {"portfolio": portfolio, "health": health}
         inbox: dict[str, Report] = {}
-        params = {"headlines": headlines} if headlines else {}
+        params: dict[str, Any] = {"headlines": headlines} if headlines else {}
+        # Learned weights of the data sources the sentiment analyst combines.
+        params["source_weights"] = {k: v for k, v in self.agent_weights.items() if k.startswith("source:")}
 
         inbox |= self.run_parallel(STAGE_RESEARCH, "market research", pair, tf, inbox, params=params, **kw)
         with ThreadPoolExecutor(max_workers=len(STAGE_CHAINS)) as pool:
@@ -229,6 +231,9 @@ class Coordinator:
         self._compare(cycle_id, pair, inbox)
         try:
             self.ledger.record(inbox, pair, tf, self.data)
+            sent = inbox.get("sentiment-analyst")
+            if sent is not None and sent.status == "ok":
+                self.ledger.record_views(sent.metrics.get("source_views") or {}, pair, tf, self.data)
         except Exception as e:  # learning must never stop a cycle
             log.warning("signal ledger not updated for %s: %s", pair, e)
 

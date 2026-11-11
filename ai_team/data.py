@@ -77,9 +77,8 @@ class KrakenPublicData:
         from .llm_news import default_scorer
         from .state import DEFAULT_STATE_DIR
 
-        self.feeds = PublicFeeds(
-            scorer=default_scorer(history_dir.parent if history_dir else DEFAULT_STATE_DIR)
-        )
+        base = history_dir.parent if history_dir else DEFAULT_STATE_DIR
+        self.feeds = PublicFeeds(scorers={k: default_scorer(base, k) for k in ("news", "reddit", "podcasts")})
 
     @staticmethod
     def _symbol(pair: str) -> str:

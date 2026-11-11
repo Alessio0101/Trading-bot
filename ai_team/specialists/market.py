@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from .. import indicators as ind
+from ..feeds import FeedUnavailable
 from ..runtime import AgentContext, HandlerResult, NeedsIntegration
 
 
@@ -184,8 +185,30 @@ def _lexicon_score(headline: str) -> float:
     return 0.0 if pos == neg else (pos - neg) / (pos + neg)
 
 
+def _text_sentiment(ctx: AgentContext, texts: list[str], kind: str) -> tuple[float, int]:
+    """Mean sentiment of texts: Claude's scores where available, the lexicon otherwise."""
+    if not texts:
+        return 0.0, 0
+    scorer = getattr(ctx.data.feeds, "headline_scores", None)
+    try:
+        claude = scorer(texts, kind) if scorer else {}
+    except Exception:  # scoring is optional
+        claude = {}
+    scores = [claude[t]["sentiment"] if t in claude else _lexicon_score(t) for t in texts]
+    return float(np.mean(scores)), sum(1 for t in texts if t in claude)
+
+
+VIEW_THRESHOLD = 0.2  # a source "has a view" when its score is beyond +/- this
+
+
 def sentiment_analyst(ctx: AgentContext) -> HandlerResult:
-    """Headline sentiment: Claude's scores when a key is configured, the lexicon otherwise."""
+    """Crowd sentiment from news, Reddit, podcasts, the Fear & Greed index and futures funding.
+
+    Each source gives a score in [-1, 1]. Fear & Greed and funding are read contrarian:
+    extreme fear or shorts paying longs is bullish, extreme greed or crowded longs is
+    bearish. The sources are combined with weights learned from their own track record
+    (ai_team.track_record, "source:<name>"), passed in by the coordinator.
+    """
     news = ctx.upstream("news-analyst")
     if news is None or news.status != "ok":
         raise NeedsIntegration("Needs classified headlines from news-analyst.")
@@ -202,12 +225,70 @@ def sentiment_analyst(ctx: AgentContext) -> HandlerResult:
             scored.append({**item, "score": c["sentiment"], "event": c["event"], "method": "claude"})
         else:
             scored.append({**item, "score": _lexicon_score(item["headline"]), "method": "lexicon"})
-    agg = float(np.mean([s["score"] for s in scored])) if scored else 0.0
+    news_score = float(np.mean([s["score"] for s in scored])) if scored else 0.0
     by_claude = sum(1 for s in scored if s["method"] == "claude")
     method = "claude" if scored and by_claude == len(scored) else "mixed" if by_claude else "lexicon"
+
+    components: dict[str, float] = {"news": news_score}
+    details: dict[str, Any] = {}
+    errors: dict[str, str] = {}
+    feeds = ctx.data.feeds
+    asset = _base(ctx.task.pair)
+    try:
+        posts = feeds.reddit()["posts"]
+        components["reddit"], n = _text_sentiment(ctx, [p["title"] for p in posts], "reddit")
+        details["reddit"] = {"posts": len(posts), "scored_by_claude": n}
+    except Exception as e:
+        errors["reddit"] = str(e)[:200]
+    try:
+        eps = feeds.podcasts()["episodes"]
+        texts = [f"{e['show']}: {e['title']}. {e['notes']}"[:500] for e in eps]
+        components["podcasts"], n = _text_sentiment(ctx, texts, "podcasts")
+        details["podcasts"] = {
+            "episodes": len(eps),
+            "scored_by_claude": n,
+            "titles": [e["title"] for e in eps][:10],
+        }
+    except Exception as e:
+        errors["podcasts"] = str(e)[:200]
+    try:
+        fg = feeds.fear_greed()
+        components["fear_greed"] = max(-1.0, min(1.0, (50 - fg["value"]) / 40))  # contrarian
+        details["fear_greed"] = fg
+    except Exception as e:
+        errors["fear_greed"] = str(e)[:200]
+    try:
+        d = feeds.derivatives().get(asset)
+        if d is None:
+            raise FeedUnavailable(f"no perpetual future for {asset}")
+        # Crowded longs pay high funding: contrarian bearish. +/-30 % a year saturates.
+        components["funding"] = max(-1.0, min(1.0, -d["funding_annualised"] / 0.3))
+        details["funding"] = d
+    except Exception as e:
+        errors["funding"] = str(e)[:200]
+
+    weights = {
+        k: float((ctx.task.params.get("source_weights") or {}).get(f"source:{k}", 1.0)) for k in components
+    }
+    composite = sum(components[k] * weights[k] for k in components) / sum(weights.values())
+    views = {
+        k: (1 if v > VIEW_THRESHOLD else -1 if v < -VIEW_THRESHOLD else 0) for k, v in components.items()
+    }
+    parts = ", ".join(f"{k} {v:+.2f}" for k, v in components.items())
     return HandlerResult(
-        f"Sentiment {agg:+.2f} over {len(scored)} headlines ({by_claude} scored by Claude)",
-        {"sentiment": agg, "scored": scored, "method": method, "claude_scored": by_claude},
+        f"Sentiment {composite:+.2f} ({parts}); {by_claude}/{len(scored)} headlines scored by Claude",
+        {
+            "sentiment": composite,
+            "news_sentiment": news_score,
+            "components": components,
+            "source_weights": weights,
+            "source_views": views,
+            "sources": details,
+            "source_errors": errors,
+            "scored": scored,
+            "method": method,
+            "claude_scored": by_claude,
+        },
     )
 
 

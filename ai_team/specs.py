@@ -144,21 +144,29 @@ SPECS: list[Spec] = [
         "sentiment-analyst",
         "Sentiment Analyst",
         "market_analysis",
-        "Score market sentiment from news and positioning text.",
+        "Score crowd sentiment from news, Reddit, podcasts, Fear & Greed and futures funding.",
         [
-            "Score each headline with Claude when an Anthropic key is configured, else a finance lexicon",
-            "Aggregate to an asset sentiment score",
-            "Forward sentiment to the Event-Driven Specialist",
+            "Score headlines, Reddit titles and podcast notes with Claude (with a key) or a lexicon",
+            "Read the Fear & Greed index and perpetual funding contrarian",
+            "Weight each source by its own scored track record",
+            "Forward sentiment to the Event-Driven Specialist and Signal Aggregation",
         ],
-        ["classified headlines from news-analyst"],
-        ["sentiment score -1..1 with per-headline scores"],
+        [
+            "classified headlines from news-analyst",
+            "Reddit top posts",
+            "crypto podcast episodes",
+            "Fear & Greed index",
+            "Kraken Futures funding",
+        ],
+        ["composite sentiment -1..1, per-source scores, views and weights"],
         M + "sentiment_analyst",
         "partial",
         integrations=["TradingAgents", "FinRobot"],
         receives_from=["news-analyst"],
         sends_to=["event-driven-specialist"],
-        gap="Claude scores headlines only when an Anthropic API key is saved "
-        "(python -m ai_team.keys setup); otherwise lexicon scoring.",
+        gap="Claude scores text only when an Anthropic API key is saved "
+        "(python -m ai_team.keys setup); otherwise lexicon scoring. Podcasts are read from "
+        "titles and show notes, not audio.",
     ),
     S(
         5,

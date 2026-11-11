@@ -175,5 +175,7 @@ class ClaudeNewsScorer:
         }
 
 
-def default_scorer(state_dir: Path) -> ClaudeNewsScorer:
-    return ClaudeNewsScorer(state_dir / "news_scores.json", local_config.load("anthropic"))
+def default_scorer(state_dir: Path, kind: str = "news") -> ClaudeNewsScorer:
+    """One scorer per text kind (news, reddit, podcasts): its own cache and hourly budget."""
+    name = "news_scores.json" if kind == "news" else f"{kind}_scores.json"
+    return ClaudeNewsScorer(state_dir / name, local_config.load("anthropic"))
