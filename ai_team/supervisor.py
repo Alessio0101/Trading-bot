@@ -104,7 +104,16 @@ def build_children(a: argparse.Namespace, state_dir: Path) -> list[Child]:
     return [
         Child(
             "gateway",
-            ["-m", "risk_gateway.server", "--port", str(a.gateway_port), "--data", a.data],
+            [
+                "-m",
+                "risk_gateway.server",
+                "--port",
+                str(a.gateway_port),
+                "--data",
+                a.data,
+                "--state-dir",
+                str(a.gateway_state_dir),
+            ],
             state_dir,
         ),
         Child(
@@ -157,6 +166,12 @@ def main(argv: list[str] | None = None) -> int:
         help="0.0.0.0 opens the read-only dashboard to the local network",
     )
     ap.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR)
+    ap.add_argument(
+        "--gateway-state-dir",
+        type=Path,
+        default=ROOT / "risk_gateway" / "state",
+        help="where the gateway keeps the paper portfolio (tests must pass a temporary one)",
+    )
     a = ap.parse_args(argv)
     state_dir: Path = a.state_dir
     state_dir.mkdir(parents=True, exist_ok=True)

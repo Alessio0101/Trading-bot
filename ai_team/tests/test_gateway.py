@@ -121,6 +121,26 @@ def test_gateway_refuses_non_paper_mode(tmp_path, monkeypatch):
         gw_mod.RiskGateway(tmp_path / "s", gw_mod.PriceSource("synthetic"))
 
 
+def test_gateway_refuses_portfolio_built_with_other_prices(tmp_path):
+    class Prices:
+        def __init__(self, kind):
+            self.kind = kind
+
+    gw = gw_mod.RiskGateway(tmp_path / "s", Prices("kraken"))
+    gw._save()
+    assert json.loads((tmp_path / "s" / "portfolio.json").read_text())["price_source"] == "kraken"
+    assert gw_mod.RiskGateway(tmp_path / "s", Prices("kraken")).portfolio["price_source"] == "kraken"
+    with pytest.raises(SystemExit, match="refusing to value it with 'synthetic'"):
+        gw_mod.RiskGateway(tmp_path / "s", Prices("synthetic"))
+
+    # A portfolio saved before the guard existed adopts the first price source that opens it.
+    legacy = json.loads((tmp_path / "s" / "portfolio.json").read_text())
+    del legacy["price_source"]
+    (tmp_path / "old").mkdir()
+    (tmp_path / "old" / "portfolio.json").write_text(json.dumps(legacy))
+    assert gw_mod.RiskGateway(tmp_path / "old", Prices("kraken")).portfolio["price_source"] == "kraken"
+
+
 def test_server_routes_are_read_only(gateway_url):
     c = GatewayClient(gateway_url)
     h = c.health()

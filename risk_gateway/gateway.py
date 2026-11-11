@@ -94,10 +94,21 @@ class RiskGateway:
 
     # ---------------- persistence ----------------
     def _load(self) -> dict:
+        kind = getattr(self.prices, "kind", None)
         if self.portfolio_file.exists():
-            return json.loads(self.portfolio_file.read_text(encoding="utf-8"))
+            pf = json.loads(self.portfolio_file.read_text(encoding="utf-8"))
+            # A portfolio is only ever valued with the prices it was built on: synthetic
+            # prices would trigger fake stop-loss / take-profit exits on real positions.
+            stored = pf.setdefault("price_source", kind)
+            if stored != kind:
+                raise SystemExit(
+                    f"portfolio in {self.state_dir} was built with {stored!r} prices; refusing to "
+                    f"value it with {kind!r} prices. Use a separate --state-dir."
+                )
+            return pf
         eq = float(self.limits["starting_equity"])
         return {
+            "price_source": kind,
             "cash": eq,
             "positions": {},
             "fills": [],

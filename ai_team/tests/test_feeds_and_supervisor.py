@@ -259,6 +259,7 @@ def test_runner_and_supervisor_default_to_4h_bars():
         data="synthetic",
         interval=5,
         timeframe="4h",
+        gateway_state_dir=Path("gw"),
     )
     runner_args = next(c.args for c in supervisor.build_children(a, Path()) if c.name == "runner")
     assert runner_args[runner_args.index("--timeframe") + 1] == "4h"
@@ -312,6 +313,8 @@ def test_supervisor_restarts_children_and_stops_on_request(tmp_path):
             str(dash_port),
             "--state-dir",
             str(tmp_path),
+            "--gateway-state-dir",
+            str(tmp_path / "gateway"),
         ],
         cwd=root,
         stdout=subprocess.DEVNULL,
@@ -440,7 +443,17 @@ def test_second_supervisor_exits_without_starting_children(tmp_path):
     try:
         root = Path(__file__).resolve().parents[2]
         r = subprocess.run(
-            [sys.executable, "-m", "ai_team.supervisor", "--data", "synthetic", "--state-dir", str(tmp_path)],
+            [
+                sys.executable,
+                "-m",
+                "ai_team.supervisor",
+                "--data",
+                "synthetic",
+                "--state-dir",
+                str(tmp_path),
+                "--gateway-state-dir",
+                str(tmp_path / "gateway"),
+            ],
             check=False,
             cwd=root,
             timeout=60,
@@ -453,3 +466,21 @@ def test_second_supervisor_exits_without_starting_children(tmp_path):
     assert "another supervisor is already running" in r.stderr
     assert not (tmp_path / "supervisor.json").exists()
     assert not list(tmp_path.glob("*.out"))  # no gateway, runner or dashboard was started
+
+
+def test_supervisor_passes_gateway_state_dir():
+    import argparse
+
+    from ai_team import supervisor
+
+    a = argparse.Namespace(
+        gateway_port=1,
+        dashboard_port=2,
+        dashboard_host="127.0.0.1",
+        data="synthetic",
+        interval=5,
+        timeframe="4h",
+        gateway_state_dir=Path("somewhere"),
+    )
+    gw_args = next(c.args for c in supervisor.build_children(a, Path()) if c.name == "gateway")
+    assert gw_args[gw_args.index("--state-dir") + 1] == "somewhere"
