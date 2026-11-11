@@ -57,6 +57,20 @@ of them. On 4-hour bars some strategies pass the same, unchanged review standard
 review does not guarantee profits: a paper trade still needs a live signal, both reviews and every
 gateway limit.
 
+### Learning over time
+
+- **Candle history.** Kraken returns only the newest 720 candles. The runner merges every
+  download into `state/history/<pair>_<timeframe>.csv` (up to 6,000 rows each), so the
+  backtests, the ML model, the parameter optimiser and the RL simulator use up to 3,000 candles
+  as the history grows. Stored candles before a gap of more than three missing candles are
+  dropped, so a computer that was off for a long time never joins two distant stretches.
+- **Track record.** Every long signal is written once per agent, pair and candle to
+  `state/signal_ledger.json`. Six candles later (one day on 4-hour bars) it is scored against
+  the market's move after 0.62 % round-trip costs. Each agent's hit rate, shrunk towards 50 %,
+  becomes a vote weight between 0.75 and 1.25 in signal aggregation. A good record can raise a
+  vote, but never above the strongest confidence a supporting agent reported. The reviews and
+  gateway limits are unchanged. The Performance tab shows the record.
+
 ### Running non-stop
 
 `ai_team/system.sh` and `ai_team/system.ps1` start one **supervisor** (`python -m ai_team.supervisor`).
@@ -76,11 +90,28 @@ Double-click these files in the repository root:
 | **`PORNIRE-AUTOMATA.bat`** | Starts the system automatically at every Windows login (a hidden script in the Startup folder). It offers to turn off sleep while on mains power, then starts the system |
 | **`OPRESTE-PORNIREA-AUTOMATA.bat`** | Removes the automatic start |
 | **`OPRESTE-AI.bat`** | Stops everything |
+| **`CONFIGUREAZA-TELEGRAM.bat`** | Connects the bot to your Telegram once (see below) |
 
 They call `ai_team/system.ps1` (`start|stop|status|telefon|local|autostart|fara-autostart`),
 written for Windows PowerShell 5.1. Python 3.11+ must be installed with "Add python.exe to PATH".
 The computer must stay on and must not sleep. These scripts have not yet been run on a real
 Windows machine.
+
+### Telegram notifications (optional)
+
+The supervisor also runs `ai_team.notifier`. Once Telegram is configured it sends a message for
+every paper buy and sell (price, amount, stop-loss / take-profit, profit) and a weekly report
+(account value, the week's change, closed trades by strategy, open positions and the agents with
+the best signal record). Rejected proposals are not sent.
+
+Set it up once with `CONFIGUREAZA-TELEGRAM.bat` (Windows) or `ai_team/system.sh telegram`:
+create a bot with @BotFather, paste its token, send `/start` to your bot and press Enter.
+`ai_team/system.sh raport` sends the weekly report immediately.
+
+The token is stored only on that computer, in `~/.ai-trading-desk/telegram.json`, outside the
+repository, so downloading a new version keeps it. It is never logged or printed, error
+messages replace it with `<token>`, and the agents are denied reads of that file. The
+notifier only reads the gateway's decisions and portfolio.
 
 ### From your phone
 

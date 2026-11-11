@@ -125,5 +125,7 @@ case "${1:-}" in
     verify) ensure_venv; "$PY" -m pytest -c ai_team/pytest.ini --rootdir . ai_team/tests -q -p no:cacheprovider; "$PY" -m ai_team.cli verify ;;
     telefon|phone) phone ;;
     local) local_only ;;
-    *) echo "Usage: $0 start|stop|restart|status|logs|verify|telefon|local"; exit 2 ;;
+    telegram) ensure_venv; "$PY" -m ai_team.notifier setup ;;
+    raport) ensure_venv; "$PY" -m ai_team.notifier report ;;
+    *) echo "Usage: $0 start|stop|restart|status|logs|verify|telefon|local|telegram|raport"; exit 2 ;;
 esac

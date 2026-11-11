@@ -244,5 +244,7 @@ switch ($Command.ToLower()) {
     "local"          { Remove-Item -Force -ErrorAction SilentlyContinue $HostFile; Stop-System; Start-System }
     "autostart"      { Set-Content -Path $HostFile -Value "0.0.0.0"; Install-Autostart }
     "fara-autostart" { Remove-Autostart }
-    default          { Write-Host "Utilizare: system.ps1 start|stop|status|telefon|local|autostart|fara-autostart"; exit 2 }
+    "telegram"       { Initialize-Venv; & $Py -m ai_team.notifier setup; if ($LASTEXITCODE -ne 0) { exit 1 } }
+    "raport"         { Initialize-Venv; & $Py -m ai_team.notifier report; if ($LASTEXITCODE -ne 0) { exit 1 } }
+    default          { Write-Host "Utilizare: system.ps1 start|stop|status|telefon|local|autostart|fara-autostart|telegram|raport"; exit 2 }
 }

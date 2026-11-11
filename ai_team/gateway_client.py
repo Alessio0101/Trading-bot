@@ -39,6 +39,10 @@ class GatewayClient:
         except OSError:
             return {}
 
+    def decisions(self) -> list[dict]:
+        """The gateway's latest decisions (read-only)."""
+        return self._call("GET", "/decisions")
+
     def limits(self) -> dict:
         return self._call("GET", "/limits")
 
