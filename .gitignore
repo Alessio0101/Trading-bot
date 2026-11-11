@@ -121,3 +121,5 @@ target/
 !config_examples/config_freqai.example.json
 
 docker-compose-*.yml
+# written by the Windows one-click update
+VERSIUNE.txt

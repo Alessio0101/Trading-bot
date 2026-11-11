@@ -1,6 +1,6 @@
 # Start / stop the AI trading system on Windows (paper trading only).
 #
-#   powershell -ExecutionPolicy Bypass -File ai_team\system.ps1 start|stop|status|telefon|local|autostart|fara-autostart
+#   powershell -ExecutionPolicy Bypass -File ai_team\system.ps1 start|stop|status|telefon|local|autostart|fara-autostart|telegram|raport|chei|actualizeaza
 #
 # One supervisor process (ai_team.supervisor) keeps the risk gateway (127.0.0.1:8790), the runner
 # and the dashboard (:8800) running and restarts any of them that stops. "telefon" opens only the
@@ -204,8 +204,7 @@ function Show-Status {
     if ((Get-DashboardHost) -eq "0.0.0.0") { Show-PhoneLink }
 }
 
-function Install-Autostart {
-    Initialize-Venv
+function Write-AutostartScript {
     $script = Join-Path $Root "ai_team\system.ps1"
     # VBScript runs PowerShell with no window at all; quotes are doubled inside the VBS string.
     $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """"$script"""" start"
@@ -217,6 +216,11 @@ function Install-Autostart {
     Set-Content -Path $StartupLink -Value $vbs -Encoding ASCII
     Write-Host "Pornire automata activata: botul porneste singur cand intri in Windows." -ForegroundColor Green
     Write-Host "  ($StartupLink)"
+}
+
+function Install-Autostart {
+    Initialize-Venv
+    Write-AutostartScript
     Write-Host ""
     Write-Host "Ca sa mearga non-stop, calculatorul nu trebuie sa intre in sleep."
     $answer = Read-Host "Opresc sleep-ul cat timp calculatorul e la priza? (D/N)"
@@ -235,6 +239,104 @@ function Remove-Autostart {
     Write-Host "Pornirea automata a fost dezactivata. (Setarile de sleep nu au fost schimbate.)"
 }
 
+# ---------------- one-click update (ACTUALIZEAZA.bat) ----------------
+$UpdateRepo = "Alessio0101/Trading-bot"
+$UpdateBranch = "claude/trading-bot-platform-w9ip9u"
+$VersionFile = Join-Path $Root "VERSIUNE.txt"
+
+function Get-CurrentVersion {
+    if (Test-Path $VersionFile) { return (Get-Content $VersionFile -Raw).Trim() }
+    if ((Split-Path -Leaf $Root) -match "^Trading-bot-([0-9a-f]{40})$") { return $Matches[1] }
+    return ""
+}
+
+function Update-System {
+    # Downloads the newest version next to this folder, moves the Python environment and the
+    # paper account (state) into it, and starts it there. Keys and the Telegram token live in
+    # %USERPROFILE%\.ai-trading-desk and are kept. This folder stays as a backup.
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $ProgressPreference = "SilentlyContinue"
+    $parent = Split-Path -Parent $Root
+    Write-Host "Caut versiunea noua ..."
+    $branch = [uri]::EscapeDataString($UpdateBranch)
+    $info = Invoke-RestMethod -Uri "https://api.github.com/repos/$UpdateRepo/commits/$branch" -UseBasicParsing -TimeoutSec 60
+    $sha = "$($info.sha)"
+    if ($sha -notmatch "^[0-9a-f]{40}$") { throw "Nu am putut afla versiunea noua de pe GitHub." }
+    if ($sha -eq (Get-CurrentVersion)) {
+        Write-Host "Ai deja ultima versiune ($($sha.Substring(0, 7)))." -ForegroundColor Green
+        return
+    }
+    $newRoot = Join-Path $parent "Trading-bot-$sha"
+
+    # Older backups (not this folder, not the new one) only take space.
+    $old = @(Get-ChildItem -Path $parent -Directory -Filter "Trading-bot-*" | Where-Object { $_.FullName -ne $Root -and $_.FullName -ne $newRoot })
+    if ($old.Count -gt 0) {
+        Write-Host "Versiuni vechi gasite (copii de rezerva): $($old.Name -join ', ')"
+        $answer = Read-Host "Le sterg ca sa fac loc pe disc? (D/N)"
+        if ($answer -match "^[DdYy]") { $old | ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue } }
+    }
+    $drive = Get-PSDrive -Name $Root.Substring(0, 1)
+    if ($drive.Free -lt 500MB) { throw "Prea putin spatiu pe disc (sub 0.5 GB liber). Elibereaza spatiu si incearca din nou." }
+
+    if (-not (Test-Path (Join-Path $newRoot "ai_team\system.ps1"))) {
+        $zip = Join-Path $env:TEMP "trading-bot-update.zip"
+        Write-Host "Descarc versiunea $($sha.Substring(0, 7)) (circa 20 MB) ..."
+        Invoke-WebRequest -Uri "https://github.com/$UpdateRepo/archive/$sha.zip" -OutFile $zip -UseBasicParsing -TimeoutSec 600
+        Write-Host "Dezarhivez ..."
+        if (Get-Command tar.exe -ErrorAction SilentlyContinue) {
+            # tar reports one harmless error for a symbolic link in the archive; the check below
+            # decides. It runs through cmd so its error text cannot stop this script (PS 5.1).
+            & cmd.exe /c "tar -xf ""$zip"" -C ""$parent"" 2>nul"
+        } else {
+            Expand-Archive -Path $zip -DestinationPath $parent -Force
+        }
+        Remove-Item -Force -ErrorAction SilentlyContinue $zip
+        if (-not (Test-Path (Join-Path $newRoot "ai_team\system.ps1"))) { throw "Dezarhivarea a esuat: $newRoot nu este complet." }
+    }
+
+    Write-Host "Opresc versiunea curenta ..."
+    Stop-System
+    $moved = $false
+    Start-Sleep -Seconds 2  # let Windows release the stopped processes' files
+    try {
+        if ((Test-Path $Venv) -and -not (Test-Path (Join-Path $newRoot ".venv"))) {
+            Move-Item -Path $Venv -Destination (Join-Path $newRoot ".venv")
+            $moved = $true
+        }
+        Write-Host "Mut contul de test si istoricul ..."
+        foreach ($dir in @("ai_team\state", "risk_gateway\state")) {
+            $src = Join-Path $Root $dir
+            if (Test-Path $src) {
+                & robocopy.exe $src (Join-Path $newRoot $dir) /E /XD pids /XF supervisor.lock supervisor.stop /NFL /NDL /NJH /NJS /NP | Out-Null
+                if ($LASTEXITCODE -ge 8) { throw "Copierea din $dir a esuat (robocopy $LASTEXITCODE)." }
+            }
+        }
+        Set-Content -Path (Join-Path $newRoot "VERSIUNE.txt") -Value $sha -Encoding ASCII
+        Write-Host "Pornesc versiunea noua ..."
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $newRoot "ai_team\system.ps1") dupa-actualizare
+        if ($LASTEXITCODE -ne 0) { throw "Versiunea noua nu a pornit." }
+    } catch {
+        Write-Host ""
+        Write-Host "Actualizarea a esuat: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Revin la versiunea veche ..."
+        if ($moved -and -not (Test-Path $Venv)) { Move-Item -Path (Join-Path $newRoot ".venv") -Destination $Venv }
+        Start-System
+        throw
+    }
+    Write-Host ""
+    Write-Host "Actualizare terminata: versiunea $($sha.Substring(0, 7)) ruleaza din $newRoot" -ForegroundColor Green
+    Write-Host "Folderul vechi a ramas ca rezerva: $Root"
+    Write-Host "(La urmatoarea actualizare te intreb daca il sterg.)"
+}
+
+function Complete-Update {
+    # Run inside the new folder by Update-System: install new packages, point the Windows
+    # start-up script here, and start. No questions are asked.
+    Initialize-Venv
+    if (Test-Path $StartupLink) { Write-AutostartScript }  # start at logon from the new folder
+    Start-System
+}
+
 switch ($Command.ToLower()) {
     "start"          { Start-System }
     "stop"           { Stop-System }
@@ -247,5 +349,7 @@ switch ($Command.ToLower()) {
     "telegram"       { Initialize-Venv; & $Py -m ai_team.notifier setup; if ($LASTEXITCODE -ne 0) { exit 1 } }
     "raport"         { Initialize-Venv; & $Py -m ai_team.notifier report; if ($LASTEXITCODE -ne 0) { exit 1 } }
     "chei"           { Initialize-Venv; & $Py -m ai_team.keys setup; if ($LASTEXITCODE -ne 0) { exit 1 } }
-    default          { Write-Host "Utilizare: system.ps1 start|stop|status|telefon|local|autostart|fara-autostart|telegram|raport|chei"; exit 2 }
+    "actualizeaza"   { Update-System }
+    "dupa-actualizare" { Complete-Update }
+    default          { Write-Host "Utilizare: system.ps1 start|stop|status|telefon|local|autostart|fara-autostart|telegram|raport|chei|actualizeaza"; exit 2 }
 }

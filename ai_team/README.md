@@ -91,6 +91,7 @@ Double-click these files in the repository root:
 | **`OPRESTE-PORNIREA-AUTOMATA.bat`** | Removes the automatic start |
 | **`OPRESTE-AI.bat`** | Stops everything |
 | **`CONFIGUREAZA-TELEGRAM.bat`** | Connects the bot to your Telegram once (see below) |
+| **`ACTUALIZEAZA.bat`** | Updates to the newest version: downloads it next to the current folder, moves the Python environment, the paper account and the history into it, points the logon start at it and starts it. Keys and the Telegram token stay in `%USERPROFILE%\.ai-trading-desk`. The old folder is kept as a backup (the next update offers to delete it); if anything fails, the old version is started again |
 | **`CONFIGUREAZA-CHEI.bat`** | Saves the optional Anthropic (Claude reads the news) and FRED (economic data) keys |
 
 They call `ai_team/system.ps1` (`start|stop|status|telefon|local|autostart|fara-autostart`),
