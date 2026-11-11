@@ -131,6 +131,15 @@ class TestMessages:
         assert "BTC/USDT: +12.50 USDT" in text
         assert "a: 70% corecte din 10" in text and "b:" not in text
 
+    def test_weekly_report_lists_missing_readiness_criteria(self):
+        ready = {
+            "met": 1,
+            "total": 2,
+            "criteria": [{"name": "Time on paper", "ok": True}, {"name": "Closed trades", "ok": None}],
+        }
+        text = nt.weekly_report({}, {}, NOW, None, ready)
+        assert "1/2 criterii" in text and "Lipsesc: Closed trades" in text and "Time on paper" not in text
+
     def test_weekly_report_empty_portfolio(self):
         text = nt.weekly_report({}, {}, NOW)
         assert "niciuna" in text

@@ -24,7 +24,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from .. import readiness
 from ..gateway_client import GatewayClient
+from ..history import CandleStore
 from ..integrations import all_status
 from ..keys import status as keys_status
 from ..llm_news import ClaudeNewsScorer
@@ -270,6 +272,13 @@ def collect(state_dir: Path, gateway: GatewayClient) -> dict[str, Any]:
             "age_s": _age_s(market.get("ts")),
             "history": {p: _downsample(h, 180) for p, h in (market.get("history") or {}).items()},
         }
+    ready = readiness.evaluate(
+        pf or {},
+        (gw.get("limits") or {}).get("starting_equity"),
+        runner,
+        {d["pair"]: d for d in decisions if d.get("type") == "strategy_review"},
+        CandleStore(state_dir / "history").load("BTC/USDT", "4h"),
+    )
     if pf:
         pf = {
             **pf,
@@ -303,6 +312,7 @@ def collect(state_dir: Path, gateway: GatewayClient) -> dict[str, Any]:
         },
         "collaboration": _collaboration(state_dir),
         "performance": _performance(store, gw, decisions),
+        "readiness": ready,
         "alerts": _alerts(runner, market, gw, agents, pf),
         "logs": _tail_lines(state_dir / "runner.log", 150),
         "integrations": [{k: i[k] for k in ("name", "installed", "used_by")} for i in all_status()]

@@ -152,6 +152,7 @@ svg.spark{display:block}
   </section>
 
   <section class="tab" id="tab-performance">
+    <div class="panel"><h2>Ready for real money? <span class="sub">fixed criteria, set in advance; meeting all of them is a precondition, not a promise of profit</span></h2><div class="scroll" id="pe-ready"></div></div>
     <div class="cards" id="pe-kpis"></div>
     <div class="panel"><h2>Strategy review <span class="sub">latest independent backtest per pair (incl. out-of-sample)</span></h2><div class="scroll" id="pe-strategies"></div></div>
     <div class="panel"><h2>Track record <span class="sub">each agent's long signals scored one horizon later, after fees; sets its vote weight (0.75&ndash;1.25)</span></h2><div class="scroll" id="pe-track"></div></div>
@@ -265,6 +266,7 @@ function renderOverview(){
     ["Open positions", pf ? Object.keys(pf.positions||{}).length : "–", pf ? `exposure ${num(pf.exposure,2)}` : ""],
     ["Gateway decisions", `${sys.approved} ✓ / ${sys.rejected} ✗`, `${sys.protective_exits} protective exits`],
     ["Alerts", S.alerts.length, S.alerts.length ? S.alerts[0].level : "all clear"],
+    ["Real-money ready", S.readiness ? `${S.readiness.met}/${S.readiness.total}` : "–", "criteria met · see Performance"],
   ];
   $("#kpis").innerHTML = kp.map(([k,v,s]) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
   $("#ov-alerts").innerHTML = alertsHtml();
@@ -458,6 +460,11 @@ function renderCoordinator(){
 }
 
 function renderPerformance(){
+  const R = S.readiness;
+  $("#pe-ready").innerHTML = !R ? empty("No readiness data yet.") : `<p><b>${R.met} / ${R.total}</b> criteria met ${R.ready?'<span class="b ok">all met</span>':'<span class="b off">not yet</span>'} <span class="muted small">paper account started ${R.started_at?esc(new Date(R.started_at).toLocaleDateString()):"–"}</span></p>
+    <table><thead><tr><th>Criterion</th><th>Now</th><th>Target</th><th>Status</th></tr></thead><tbody>${
+    R.criteria.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.value)}</td><td class="muted">${esc(c.target)}</td><td>${c.ok===true?'<span class="b ok">met</span>':c.ok===false?'<span class="b bad">not yet</span>':'<span class="b off">waiting for data</span>'}</td></tr>`).join("")}</tbody></table>
+    <p class="small muted">${esc(R.note)} The system stays paper-only.</p>`;
   const s = S.performance.system;
   const kp = [["Total return", pct(s.total_return_pct), `equity ${num(s.equity,2)}`],["Realised P&L", num(s.realised_pnl,2), `${s.closed_trades} closed trades`],["Unrealised P&L", num(s.unrealised_pnl,2), "open positions"],
     ["Win rate", s.win_rate==null?"–":num(s.win_rate*100,0)+"%", "closed trades"],["Approval rate", s.proposals_to_gateway?num(s.approved/s.proposals_to_gateway*100,0)+"%":"–", `${s.proposals_to_gateway} proposals`]];

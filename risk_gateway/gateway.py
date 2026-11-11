@@ -25,6 +25,7 @@ from ai_team.data import KrakenPublicData, SyntheticMarketData  # noqa: E402
 
 
 HISTORY_LIMIT = 5000  # equity marks kept for the dashboard curve
+MARK_INTERVAL_S = 300  # 5000 marks x 5 min = about 17 days
 
 ALLOWED_FIELDS = {
     "proposal_id",
@@ -105,10 +106,17 @@ class RiskGateway:
                     f"portfolio in {self.state_dir} was built with {stored!r} prices; refusing to "
                     f"value it with {kind!r} prices. Use a separate --state-dir."
                 )
+            # Long-term bookkeeping added later: when the paper account started and its worst
+            # drawdown ever (the equity history is only a rolling window).
+            first = [f["ts"] for f in pf.get("fills", [])[:1]] + [h["ts"] for h in pf.get("history", [])[:1]]
+            pf.setdefault("created_at", min(first) if first else _now())
+            pf.setdefault("max_drawdown_pct", 0.0)
             return pf
         eq = float(self.limits["starting_equity"])
         return {
             "price_source": kind,
+            "created_at": _now(),
+            "max_drawdown_pct": 0.0,
             "cash": eq,
             "positions": {},
             "fills": [],
@@ -172,6 +180,7 @@ class RiskGateway:
         if pf["day"] != today:
             pf["day"], pf["day_start_equity"] = today, equity
         pf["peak_equity"] = max(pf["peak_equity"], equity)
+        pf["max_drawdown_pct"] = min(pf.get("max_drawdown_pct", 0.0), equity / pf["peak_equity"] - 1)
         return {
             **pf,
             "equity": equity,
@@ -329,7 +338,7 @@ class RiskGateway:
             "venue": "paper",
         }
         pf["fills"].append(fill)
-        self._mark()
+        self._mark(force=True)
         return fill
 
     def _close(self, p: dict, price: float) -> dict:
@@ -361,14 +370,18 @@ class RiskGateway:
             "venue": "paper",
         }
         pf["fills"].append(fill)
-        self._mark()
+        self._mark(force=True)
         return fill
 
-    def _mark(self) -> None:
+    def _mark(self, force: bool = False) -> None:
         snap = self._snapshot()
         history = self.portfolio["history"]
-        history.append({"ts": _now(), "equity": snap["equity"]})
-        del history[:-HISTORY_LIMIT]
+        last = datetime.fromisoformat(history[-1]["ts"]) if history else None
+        # One equity point per MARK_INTERVAL_S (and at every fill), so the rolling
+        # history spans weeks instead of hours.
+        if force or last is None or (datetime.now(UTC) - last).total_seconds() >= MARK_INTERVAL_S:
+            history.append({"ts": _now(), "equity": snap["equity"]})
+            del history[:-HISTORY_LIMIT]
         self._save()
 
     # ---------------- protective exits ----------------

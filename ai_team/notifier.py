@@ -27,9 +27,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from . import readiness
 from .fsutil import atomic_write_text
 from .gateway_client import GatewayClient
-from .state import DEFAULT_STATE_DIR
+from .history import CandleStore
+from .state import DEFAULT_STATE_DIR, StateStore
 from .track_record import SignalLedger
 
 
@@ -166,6 +168,7 @@ def weekly_report(
     track_record: dict[str, dict[str, Any]],
     now: datetime | None = None,
     starting_equity: float | None = None,
+    ready: dict[str, Any] | None = None,
 ) -> str:
     now = now or datetime.now(UTC)
     since = now - REPORT_EVERY
@@ -204,6 +207,11 @@ def weekly_report(
             f"  · {a}: {s['hit_rate'] * 100:.0f}% corecte din {s['signals']} (vot x{s['weight']:.2f})"
             for a, s in scored[:3]
         ]
+    if ready:
+        missing = [c["name"] for c in ready["criteria"] if c["ok"] is not True]
+        lines.append(f"Pregătire pentru bani reali: {ready['met']}/{ready['total']} criterii îndeplinite")
+        if missing:
+            lines.append("  Lipsesc: " + "; ".join(missing))
     return "\n".join(lines)
 
 
@@ -274,7 +282,19 @@ class Notifier:
         except (OSError, TypeError, ValueError):
             start = None
         scores = SignalLedger(self.state_dir / "signal_ledger.json").scores()
-        self.telegram.send(weekly_report(pf, scores, now, start))
+        try:
+            runner = json.loads((self.state_dir / "runner.json").read_text())
+        except (OSError, ValueError):
+            runner = None
+        reviews = {
+            d["pair"]: d
+            for d in StateStore(self.state_dir).decisions(400)
+            if d.get("type") == "strategy_review"
+        }
+        ready = readiness.evaluate(
+            pf, start, runner, reviews, CandleStore(self.state_dir / "history").load("BTC/USDT", "4h")
+        )
+        self.telegram.send(weekly_report(pf, scores, now, start, ready))
 
     def run_forever(self) -> None:
         configured_logged = None
