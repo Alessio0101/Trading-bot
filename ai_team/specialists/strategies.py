@@ -64,6 +64,10 @@ def rule_scalp(df: pd.DataFrame) -> pd.Series:
     return _hold(dev < -0.002, dev > 0)
 
 
+# Protective levels every rule-based proposal carries to the gateway; the backtest
+# (quant.backtest_with_stops) simulates exactly these.
+STOP_ATR, TAKE_PROFIT_ATR = 2.0, 3.0
+
 STRATEGY_RULES = {
     "trend_following": rule_trend,
     "mean_reversion": rule_mean_reversion,
@@ -90,8 +94,8 @@ def _signal_from_rule(ctx: AgentContext, name: str, why: str, confidence: float)
                 source="",
                 rationale=why + (" (fresh entry)" if before == 0 else " (position held)"),
                 entry_price=price,
-                stop_loss=price - 2 * a,
-                take_profit=price + 3 * a,
+                stop_loss=price - STOP_ATR * a,
+                take_profit=price + TAKE_PROFIT_ATR * a,
                 strategy=name,
             )
         )

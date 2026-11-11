@@ -229,3 +229,51 @@ def test_coordinator_cycle_records_and_scores_signals(tmp_path):
     learning = [d for d in state.decisions() if d.get("type") == "learning"]
     assert learning and "track_record" in learning[-1]
     assert (tmp_path / "signal_ledger.json").exists() or coord.ledger.pending() == 0
+
+
+# ---------------- stop-aware backtest ----------------
+
+from ai_team.specialists.quant import FEE, SLIPPAGE, backtest_with_stops  # noqa: E402
+
+
+def bars(rows):
+    """rows: (open, high, low, close); ATR(14) of these frames is driven by the ranges."""
+    idx = pd.date_range("2026-01-01", periods=len(rows), freq="4h", tz="UTC")
+    return pd.DataFrame(rows, columns=["open", "high", "low", "close"], index=idx).assign(volume=1.0)
+
+
+FLAT = [(100, 101, 99, 100)] * 20  # ATR settles at 2 -> stop 96, target 106 for an entry at 100
+COST = FEE + SLIPPAGE
+
+
+class TestBacktestWithStops:
+    def run(self, tail, want):
+        df = bars(FLAT + tail)
+        pos = pd.Series([0.0] * 19 + want, index=df.index)
+        return backtest_with_stops(df, pos, "4h")
+
+    def test_take_profit(self):
+        m = self.run([(100, 101, 99, 100), (101, 107, 100, 105)], [1.0, 1.0, 0.0])
+        assert m["trades"] == 1 and m["take_profit_exits"] == 1 and m["win_rate"] == 1.0
+        assert m["total_return"] == pytest.approx(106 / 100 * (1 - COST) ** 2 - 1, abs=2e-3)
+
+    def test_stop_loss_and_gap_fills_at_open(self):
+        m = self.run([(100, 101, 99, 100), (100, 100, 95, 97)], [1.0, 1.0, 1.0])
+        assert m["stop_exits"] == 1 and m["win_rate"] == 0.0
+        gap = self.run([(100, 101, 99, 100), (90, 91, 89, 90)], [1.0, 1.0, 0.0])
+        assert gap["stop_exits"] == 1
+        assert gap["total_return"] == pytest.approx(90 / 100 * (1 - COST) ** 2 - 1, abs=2e-3)
+
+    def test_candle_touching_both_levels_counts_as_stop(self):
+        m = self.run([(100, 101, 99, 100), (100, 110, 90, 100)], [1.0, 1.0, 1.0])
+        assert m["stop_exits"] == 1 and m["take_profit_exits"] == 0
+
+    def test_rule_exit_at_close_and_re_entry_after_stop(self):
+        m = self.run([(100, 101, 99, 100), (100, 101, 99, 101)], [1.0, 1.0, 0.0])
+        assert m["rule_exits"] == 1 and m["stop_exits"] == 0
+        again = self.run([(100, 101, 99, 100), (100, 100, 95, 97), (97, 98, 96, 97)], [1.0, 1.0, 1.0, 1.0])
+        assert again["stop_exits"] == 1 and again["trades"] == 2  # the rule is still long: re-enters
+
+    def test_never_long_is_flat(self):
+        m = self.run([(100, 101, 99, 100)], [0.0, 0.0])
+        assert m["trades"] == 0 and m["total_return"] == 0 and m["win_rate"] is None

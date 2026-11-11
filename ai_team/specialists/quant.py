@@ -8,7 +8,7 @@ import pandas as pd
 from .. import indicators as ind
 from ..data import periods_per_year
 from ..runtime import AgentContext, HandlerResult, NeedsIntegration
-from .strategies import STRATEGY_RULES
+from .strategies import STOP_ATR, STRATEGY_RULES, TAKE_PROFIT_ATR
 
 
 FEE = 0.0026  # Kraken taker fee per side, conservative
@@ -34,6 +34,78 @@ def backtest(
         "exposure": float(pos.mean()),
         "buy_hold_return": float(df["close"].iloc[-1] / df["close"].iloc[0] - 1),
         "bars": len(df),
+    }
+
+
+def backtest_with_stops(
+    df: pd.DataFrame,
+    position: pd.Series,
+    timeframe: str,
+    stop_atr: float = STOP_ATR,
+    take_profit_atr: float = TAKE_PROFIT_ATR,
+    fee: float = FEE,
+    slippage: float = SLIPPAGE,
+) -> dict:
+    """Replay a rule the way the paper system trades it.
+
+    At each candle close the rule is read: flat and long -> buy at the close with a stop
+    ``stop_atr`` x ATR below and a take-profit ``take_profit_atr`` x ATR above (the levels
+    the strategist sends to the gateway); long and flat -> sell at the close. Between
+    closes the gateway's protective exits fire on the candle's low/high; a candle that
+    touches both is counted as a stop (conservative), and a gap through a level fills at
+    the open. After a protective exit the rule may re-enter at the next close, as the
+    paper system does.
+    """
+    o, h, low_, c = (df[k].to_numpy(float) for k in ("open", "high", "low", "close"))
+    a = ind.atr(df).to_numpy(float)
+    want = position.reindex(df.index).fillna(0).to_numpy(float) > 0.5
+    cost = fee + slippage
+    n = len(df)
+    equity = np.ones(n)
+    cash, units = 1.0, 0.0
+    stop = target = entry_cash = 0.0
+    trades = stops = targets = rule_exits = wins = 0
+    in_pos_bars = 0
+
+    def sell(price: float) -> None:
+        nonlocal cash, units, wins
+        cash = units * price * (1 - cost)
+        wins += cash > entry_cash
+        units = 0.0
+
+    for t in range(n):
+        if units and t > 0:
+            in_pos_bars += 1
+            if low_[t] <= stop:
+                sell(min(o[t], stop))
+                stops += 1
+            elif h[t] >= target:
+                sell(max(o[t], target))
+                targets += 1
+        if units and not want[t]:
+            sell(c[t])
+            rule_exits += 1
+        elif not units and want[t] and np.isfinite(a[t]) and a[t] > 0:
+            entry_cash = cash
+            units = cash * (1 - cost) / c[t]
+            cash = 0.0
+            stop, target = c[t] - stop_atr * a[t], c[t] + take_profit_atr * a[t]
+            trades += 1
+        equity[t] = cash + units * c[t]
+    eq = pd.Series(equity, index=df.index)
+    closed = stops + targets + rule_exits
+    return {
+        "total_return": float(eq.iloc[-1] - 1) if n else 0.0,
+        "sharpe": ind.sharpe(eq.pct_change().fillna(0), periods_per_year(timeframe)),
+        "max_drawdown": ind.max_drawdown(eq),
+        "trades": trades,
+        "exposure": in_pos_bars / n if n else 0.0,
+        "buy_hold_return": float(c[-1] / c[0] - 1) if n else 0.0,
+        "bars": n,
+        "stop_exits": stops,
+        "take_profit_exits": targets,
+        "rule_exits": rule_exits,
+        "win_rate": wins / closed if closed else None,
     }
 
 
@@ -231,8 +303,10 @@ def backtesting_specialist(ctx: AgentContext) -> HandlerResult:
         # Signals use the full history for indicator warm-up; the out-of-sample
         # metrics only score the final, unseen segment.
         pos = STRATEGY_RULES[n](df)
-        m = backtest(df, pos, ctx.task.timeframe)
-        m["out_of_sample"] = backtest(df.iloc[split:], pos.iloc[split:], ctx.task.timeframe)
+        m = backtest_with_stops(df, pos, ctx.task.timeframe)
+        m["out_of_sample"] = backtest_with_stops(df.iloc[split:], pos.iloc[split:], ctx.task.timeframe)
+        # The plain signal-only replay is kept for comparison; the review uses the above.
+        m["without_stops"] = backtest(df, pos, ctx.task.timeframe)
         results[n] = m
     best = max(results, key=lambda k: results[k]["sharpe"]) if results else None
     best_txt = f"best {best} (Sharpe {results[best]['sharpe']:.2f})" if best else "nothing testable"
@@ -247,6 +321,9 @@ def backtesting_specialist(ctx: AgentContext) -> HandlerResult:
             "fee": FEE,
             "slippage": SLIPPAGE,
             "out_of_sample_fraction": OOS_FRACTION,
+            "exit_model": (
+                f"gateway stop-loss {STOP_ATR:g}x ATR, take-profit {TAKE_PROFIT_ATR:g}x ATR, rule exits"
+            ),
         },
     )
 
