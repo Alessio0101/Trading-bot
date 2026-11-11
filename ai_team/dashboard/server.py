@@ -28,6 +28,7 @@ from ..gateway_client import GatewayClient
 from ..integrations import all_status
 from ..specs import BY_ID, CATEGORIES, SPECS, WORKFLOWS
 from ..state import DEFAULT_STATE_DIR, SIGNAL_AGENTS, StateStore
+from ..track_record import HORIZON_BARS, SignalLedger
 
 
 HTML_FILE = Path(__file__).parent / "index.html"
@@ -159,10 +160,14 @@ def _performance(store: StateStore, gw: dict[str, Any], decisions: list[dict]) -
                 "risk": a["risk"],
             }
         )
+    ledger = SignalLedger(store.dir / "signal_ledger.json")
     return {
         "system": system,
         "strategies_by_pair": latest_review,
         "agents": sorted(agents, key=lambda x: x["number"]),
+        "track_record": ledger.scores(),
+        "signals_pending": ledger.pending(),
+        "horizon_bars": HORIZON_BARS,
     }
 
 

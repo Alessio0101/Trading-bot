@@ -81,3 +81,151 @@ class TestCandleStore:
         assert len(df) == 10  # 6 + 6 with 2 overlapping candles
         no_history = KrakenPublicData(opener=FakeOpener([ohlc("2026-01-01 16:00", 6)]))
         assert len(no_history.ohlcv("BTC/USDT", "4h", limit=3000)) == 6
+
+
+# ---------------- learning from the team's own signals ----------------
+
+from ai_team.models import Report, Signal, Task  # noqa: E402
+from ai_team.runtime import AgentContext, run_specialist  # noqa: E402
+from ai_team.track_record import (  # noqa: E402
+    HORIZON_BARS,
+    ROUND_TRIP_COST,
+    WEIGHT_MAX,
+    WEIGHT_MIN,
+    SignalLedger,
+    weight_from,
+)
+
+
+class FrozenMarket:
+    """Stand-in market with fixed 4-hour candles."""
+
+    name = "test"
+
+    def __init__(self, closes, start="2026-01-01"):
+        self.df = candles(start, len(closes))
+        self.df["close"] = closes
+
+    def upto(self, n):
+        m = FrozenMarket([0.0])
+        m.df = self.df.iloc[:n]
+        return m
+
+    def ohlcv(self, pair, timeframe="4h", limit=500):
+        return self.df.tail(limit)
+
+
+def report(agent, side="long", pair="BTC/USDT", conf=0.6, strategy="momentum"):
+    return Report(agent, "t", "ok", "s", signals=[Signal(pair, side, conf, agent, "test", strategy=strategy)])
+
+
+class TestWeights:
+    @pytest.mark.parametrize(
+        ("wins", "n", "expected"),
+        [
+            (0, 0, 1.0),
+            (5, 10, 1.0),
+            (10, 10, 1.25),
+            (0, 10, 0.75),
+            (1, 1, 1.045),
+            (100, 100, 1.25),
+            (0, 100, 0.75),
+        ],
+    )
+    def test_weight_is_shrunk_and_bounded(self, wins, n, expected):
+        w = weight_from(wins, n)
+        assert w == pytest.approx(expected, abs=1e-3)
+        assert WEIGHT_MIN <= w <= WEIGHT_MAX
+
+
+class TestSignalLedger:
+    def test_records_once_per_candle_and_only_longs(self, tmp_path):
+        ledger = SignalLedger(tmp_path / "l.json")
+        m = FrozenMarket([100.0] * 10)
+        inbox = {"a": report("a"), "b": report("b", side="exit"), "c": report("c", pair="ETH/USDT")}
+        assert ledger.record(inbox, "BTC/USDT", "4h", m) == 1
+        assert ledger.record(inbox, "BTC/USDT", "4h", m) == 0  # same candle: not counted twice
+        assert ledger.record(inbox, "BTC/USDT", "4h", m.upto(5)) == 1  # a different candle is new
+        assert ledger.record({}, "BTC/USDT", "4h", m) == 0
+        assert ledger.pending() == 2
+
+    def test_evaluates_after_the_horizon_net_of_costs(self, tmp_path):
+        ledger = SignalLedger(tmp_path / "l.json")
+        closes = [100.0] * 5 + [110.0] * 20  # rises 10 % after the signal candle
+        m = FrozenMarket(closes)
+        ledger.record({"win": report("win")}, "BTC/USDT", "4h", m.upto(5))  # signal at close 100
+        signal_candle = m.df.index[4]
+        too_early = signal_candle + H4 * HORIZON_BARS
+        assert ledger.evaluate(m, now=too_early) == 0  # target candle still forming
+        assert ledger.evaluate(m, now=too_early + H4) == 1
+        s = ledger.scores()["win"]
+        assert s["signals"] == 1 and s["wins"] == 1
+        assert s["avg_net_return"] == pytest.approx(0.10 - ROUND_TRIP_COST, abs=1e-6)
+        assert ledger.evaluate(m, now=too_early + H4 * 5) == 0  # already scored
+
+    def test_flat_market_is_a_loss_after_costs(self, tmp_path):
+        ledger = SignalLedger(tmp_path / "l.json")
+        m = FrozenMarket([100.0] * 30)
+        ledger.record({"flat": report("flat")}, "BTC/USDT", "4h", m.upto(5))
+        ledger.evaluate(m, now=m.df.index[-1] + H4)
+        s = ledger.scores()["flat"]
+        assert s["wins"] == 0 and s["avg_net_return"] == pytest.approx(-ROUND_TRIP_COST)
+
+    def test_missing_data_waits(self, tmp_path):
+        ledger = SignalLedger(tmp_path / "l.json")
+        m = FrozenMarket([100.0] * 6)
+        ledger.record({"a": report("a")}, "BTC/USDT", "4h", m)
+        assert ledger.evaluate(m.upto(6), now=m.df.index[-1] + H4 * 30) == 0  # no candle near the target
+        assert ledger.pending() == 1
+
+    def test_corrupt_ledger_starts_empty(self, tmp_path):
+        (tmp_path / "l.json").write_text("{nope")
+        ledger = SignalLedger(tmp_path / "l.json")
+        assert ledger.scores() == {} and ledger.pending() == 0
+
+
+class TestAggregationUsesTrackRecord:
+    def run_agg(self, weights):
+        inbox = {
+            "good": report("good", conf=0.6, strategy="momentum"),
+            "bad": report("bad", conf=0.6, strategy="momentum"),
+        }
+        ctx = AgentContext(
+            Task("signal-aggregation-specialist", "t", "BTC/USDT", "4h", {"agent_weights": weights}),
+            FrozenMarket([100.0] * 5),
+            inbox,
+        )
+        return run_specialist("signal-aggregation-specialist", ctx)
+
+    def test_bad_record_lowers_confidence(self):
+        neutral = self.run_agg({}).metrics["proposals"][0]["confidence"]
+        lowered = self.run_agg({"good": 0.75, "bad": 0.75}).metrics["proposals"][0]["confidence"]
+        assert lowered < neutral
+
+    def test_good_record_cannot_exceed_reported_conviction(self):
+        r = self.run_agg({"good": 1.25, "bad": 1.25})
+        assert r.metrics["proposals"][0]["confidence"] <= 0.6 + 1e-9
+        assert r.metrics["learned_weights"] == {"good": 1.25, "bad": 1.25}
+
+
+def test_coordinator_cycle_records_and_scores_signals(tmp_path):
+    from ai_team.coordinator import Coordinator
+    from ai_team.data import SyntheticMarketData
+    from ai_team.state import StateStore
+
+    class DownGateway:
+        def health(self):
+            return {"ok": False}
+
+        def portfolio(self):
+            return {}
+
+        def submit(self, proposal):
+            return {"approved": False, "reasons": ["gateway unreachable"]}
+
+    state = StateStore(tmp_path)
+    coord = Coordinator(SyntheticMarketData(seed=11, drift=0.0012), DownGateway(), state)
+    coord.cycle(["BTC/USDT"], "1h", submit=False)
+    learning = [d for d in state.decisions() if d.get("type") == "learning"]
+    assert learning and "track_record" in learning[-1]
+    assert (tmp_path / "signal_ledger.json").exists() or coord.ledger.pending() == 0

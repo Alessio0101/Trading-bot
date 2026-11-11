@@ -154,6 +154,7 @@ svg.spark{display:block}
   <section class="tab" id="tab-performance">
     <div class="cards" id="pe-kpis"></div>
     <div class="panel"><h2>Strategy review <span class="sub">latest independent backtest per pair (incl. out-of-sample)</span></h2><div class="scroll" id="pe-strategies"></div></div>
+    <div class="panel"><h2>Track record <span class="sub">each agent's long signals scored one horizon later, after fees; sets its vote weight (0.75&ndash;1.25)</span></h2><div class="scroll" id="pe-track"></div></div>
     <div class="panel"><h2>Agent performance</h2><div class="scroll tall" id="pe-agents"></div></div>
   </section>
 
@@ -467,6 +468,10 @@ function renderPerformance(){
       return `<tr><td>${esc(p)}</td><td>${esc(st)}</td><td><span class="b ${v.verdict==="APPROVE"?"ok":"bad"}">${esc(v.verdict)}</span></td><td class="n ${cls(m.total_return)}">${m.total_return==null?"–":pct(m.total_return*100)}</td>
       <td class="n">${num(m.sharpe,2)}</td><td class="n">${m.max_drawdown==null?"–":pct(m.max_drawdown*100)}</td><td class="n">${m.trades??"–"}</td><td class="n">${num(o.sharpe,2)}</td><td class="n">${o.trades??"–"}</td><td class="small">${esc((v.reasons||[]).join("; "))}</td></tr>`})).join("")}</tbody></table>`
     : empty("No strategy reviews yet.");
+  const tr = S.performance.track_record || {}, trIds = Object.keys(tr).sort((a,b) => tr[b].weight - tr[a].weight);
+  $("#pe-track").innerHTML = trIds.length ? `<table><thead><tr><th>Agent</th><th class="n">Scored signals</th><th class="n">Hit rate</th><th class="n">Avg net return</th><th class="n">Vote weight</th></tr></thead><tbody>${
+    trIds.map(id => { const t = tr[id]; return `<tr><td>${esc(id)}</td><td class="n">${t.signals}</td><td class="n">${num(t.hit_rate*100,0)}%</td><td class="n ${cls(t.avg_net_return)}">${pct(t.avg_net_return*100)}</td><td class="n"><b>${num(t.weight,2)}</b></td></tr>`}).join("")}</tbody></table>`
+    : empty(`No signal scored yet: ${S.performance.signals_pending||0} waiting for their horizon (${S.performance.horizon_bars||6} candles).`);
   const ag = S.performance.agents;
   $("#pe-agents").innerHTML = `<table><thead><tr><th class="n">#</th><th>Agent</th><th>Category</th><th class="n">Runs</th><th class="n">OK</th><th class="n">Errors</th><th class="n">N/I</th><th class="n">Success</th><th class="n">Avg ms</th><th class="n">Submitted</th><th class="n">Approved</th><th class="n">Rejected</th></tr></thead><tbody>${
     ag.map(a => `<tr><td class="n">${a.number}</td><td>${esc(a.name)}</td><td class="small muted">${esc(a.category)}</td><td class="n">${a.runs}</td><td class="n">${a.ok}</td><td class="n ${a.errors?"down":""}">${a.errors}</td><td class="n">${a.needs_integration}</td>

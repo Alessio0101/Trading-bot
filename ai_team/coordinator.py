@@ -9,6 +9,7 @@ bypass the gateway: it holds no broker, no credentials and no limit controls.
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from itertools import pairwise
 from typing import Any, TypedDict
@@ -20,6 +21,10 @@ from .models import Report, Task, new_id
 from .runtime import DEFAULT_UNIVERSE, AgentContext, run_specialist
 from .specs import COORDINATOR_ID, WORKFLOWS
 from .state import StateStore
+from .track_record import SignalLedger
+
+
+log = logging.getLogger(__name__)
 
 
 # Stage plan for one pair. Agents inside a stage are independent -> run in parallel.
@@ -96,6 +101,9 @@ class Coordinator:
         self.bus = bus or MessageBus(state.messages_file)
         self.max_workers = max_workers
         self.universe = universe or list(DEFAULT_UNIVERSE)
+        # Each agent's paper track record; it only re-weights votes in signal aggregation.
+        self.ledger = SignalLedger(state.dir / "signal_ledger.json")
+        self.agent_weights: dict[str, float] = {}
 
     # ---------------- primitives ----------------
     def assign(
@@ -192,6 +200,7 @@ class Coordinator:
             gateway=health,
             data_source=self.data.name,
         )
+        self._learn(cycle_id)
         summary: dict[str, Any] = {"cycle_id": cycle_id, "pairs": {}, "gateway": health}
         for pair in pairs or self.universe:
             summary["pairs"][pair] = self._cycle_pair(
@@ -218,8 +227,20 @@ class Coordinator:
                 inbox |= f.result()
         inbox |= self.run_parallel(STAGE_STRATEGIES, "propose trades", pair, tf, inbox, **kw)
         self._compare(cycle_id, pair, inbox)
+        try:
+            self.ledger.record(inbox, pair, tf, self.data)
+        except Exception as e:  # learning must never stop a cycle
+            log.warning("signal ledger not updated for %s: %s", pair, e)
 
-        agg = self.assign("signal-aggregation-specialist", "aggregate signals", pair, tf, inbox, **kw)
+        agg = self.assign(
+            "signal-aggregation-specialist",
+            "aggregate signals",
+            pair,
+            tf,
+            inbox,
+            params={"agent_weights": self.agent_weights},
+            **kw,
+        )
         inbox[agg.agent_id] = agg
         proposals = [p for p in agg.metrics.get("proposals", []) if p["pair"] == pair]
 
@@ -263,6 +284,23 @@ class Coordinator:
                 "no_trade", cycle_id=cycle_id, pair=pair, reason="no strategy produced a signal"
             )
         return {"proposals": results, "agents": {a: r.status for a, r in inbox.items()}}
+
+    def _learn(self, cycle_id: str) -> None:
+        """Score matured signals and refresh the per-agent vote weights."""
+        try:
+            scored = self.ledger.evaluate(self.data)
+            scores = self.ledger.scores()
+        except Exception as e:  # learning must never stop a cycle
+            log.warning("signal ledger evaluation failed: %s", e)
+            return
+        self.agent_weights = {a: s["weight"] for a, s in scores.items()}
+        self.state.record_decision(
+            "learning",
+            cycle_id=cycle_id,
+            newly_scored=scored,
+            pending=self.ledger.pending(),
+            track_record=scores,
+        )
 
     def _compare(self, cycle_id: str, pair: str, inbox: dict[str, Report]) -> None:
         views: dict[str, list[str]] = {}

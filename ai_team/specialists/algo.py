@@ -73,6 +73,10 @@ def signal_aggregation_specialist(ctx: AgentContext) -> HandlerResult:
     ta_bias = ta.metrics["bias"] if ta and ta.status == "ok" else 0.0
     trend_family = {"trend_following", "momentum", "breakout", "swing"}
 
+    # Vote multipliers learned from each agent's paper track record (ai_team.track_record),
+    # bounded to [0.75, 1.25]. Agents without a scored record count as 1.0.
+    learned = ctx.task.params.get("agent_weights") or {}
+
     by_pair: dict[tuple, list] = defaultdict(list)
     for rep in ctx.inbox.values():
         for s in rep.signals:
@@ -82,12 +86,15 @@ def signal_aggregation_specialist(ctx: AgentContext) -> HandlerResult:
     for (pair, side), sigs in by_pair.items():
         weights = []
         for s in sigs:
-            w = s.confidence
+            w = s.confidence * float(learned.get(s.source, 1.0))
             if trending is not None and s.strategy:
                 fits = (s.strategy in trend_family) == trending
                 w *= 1.15 if fits else 0.8
             weights.append(w)
-        score = float(np.mean(weights)) + 0.05 * flow_bias + 0.05 * ta_bias
+        context = 0.05 * flow_bias + 0.05 * ta_bias
+        # A good track record can raise a vote, but never above the strongest conviction
+        # an agent itself reported: learning cannot invent confidence.
+        score = min(float(np.mean(weights)), max(s.confidence for s in sigs)) + context
         if side == "long" and (pair, "exit") in by_pair:
             score -= 0.1  # conflicting views lower conviction
         best = sigs[int(np.argmax(weights))]
@@ -112,6 +119,9 @@ def signal_aggregation_specialist(ctx: AgentContext) -> HandlerResult:
             "regime_trending": trending,
             "flow_bias": flow_bias,
             "technical_bias": ta_bias,
+            "learned_weights": {
+                s.source: learned[s.source] for v in by_pair.values() for s in v if s.source in learned
+            },
         },
     )
 
