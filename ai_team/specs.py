@@ -146,7 +146,7 @@ SPECS: list[Spec] = [
         "market_analysis",
         "Score market sentiment from news and positioning text.",
         [
-            "Score each headline with a finance lexicon",
+            "Score each headline with Claude when an Anthropic key is configured, else a finance lexicon",
             "Aggregate to an asset sentiment score",
             "Forward sentiment to the Event-Driven Specialist",
         ],
@@ -157,27 +157,29 @@ SPECS: list[Spec] = [
         integrations=["TradingAgents", "FinRobot"],
         receives_from=["news-analyst"],
         sends_to=["event-driven-specialist"],
-        gap="Lexicon scoring of headlines only; an LLM/FinBERT scorer (TradingAgents, FinRobot) "
-        "is not installed.",
+        gap="Claude scores headlines only when an Anthropic API key is saved "
+        "(python -m ai_team.keys setup); otherwise lexicon scoring.",
     ),
     S(
         5,
         "macro-economic-analyst",
         "Macro-Economic Analyst",
         "market_analysis",
-        "Assess crypto-wide risk-on/off context.",
+        "Assess crypto-wide and US-economy risk-on/off context.",
         [
             "Track total crypto market cap and its 24h change",
             "Track BTC dominance",
+            "Track Fed funds, CPI inflation, the 10-year yield and the dollar (FRED)",
             "Map the result to a risk-appetite score",
         ],
-        ["CoinGecko global market data"],
+        ["CoinGecko global market data", "FRED economic series"],
         ["macro regime label and risk-appetite score"],
         M + "macro_economic_analyst",
         "partial",
-        integrations=["CoinGecko", "FinRobot"],
+        integrations=["CoinGecko", "FRED", "FinRobot"],
         sends_to=["market-regime-analyst"],
-        gap="Crypto-wide data only; economic data (rates, CPI) needs a FRED key or FinRobot.",
+        gap="US economic data (FRED) only when a free FRED API key is saved "
+        "(python -m ai_team.keys setup); otherwise crypto-wide data only.",
     ),
     S(
         6,

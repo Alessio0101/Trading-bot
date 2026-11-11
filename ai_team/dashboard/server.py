@@ -26,6 +26,8 @@ from urllib.parse import parse_qs, urlparse
 
 from ..gateway_client import GatewayClient
 from ..integrations import all_status
+from ..keys import status as keys_status
+from ..llm_news import ClaudeNewsScorer
 from ..specs import BY_ID, CATEGORIES, SPECS, WORKFLOWS
 from ..state import DEFAULT_STATE_DIR, SIGNAL_AGENTS, StateStore
 from ..track_record import HORIZON_BARS, SignalLedger
@@ -212,6 +214,25 @@ def _alerts(
     return alerts
 
 
+def _optional_services(state_dir: Path) -> list[dict[str, Any]]:
+    """Which optional keys are saved on this computer (never the keys themselves)."""
+    k = keys_status()
+    news = ClaudeNewsScorer(state_dir / "news_scores.json", None).status()
+    claude = "Claude news scoring" + (f" ({k['anthropic_model']})" if k["anthropic"] else "")
+    if news["last_error"] and k["anthropic"]:
+        claude += f" - last error: {news['last_error'][:80]}"
+    return [
+        {"name": claude, "installed": k["anthropic"], "used_by": ["sentiment-analyst"], "kind": "key"},
+        {
+            "name": "FRED economic data",
+            "installed": k["fred"],
+            "used_by": ["macro-economic-analyst"],
+            "kind": "key",
+        },
+        {"name": "Telegram notifications", "installed": k["telegram"], "used_by": [], "kind": "key"},
+    ]
+
+
 def collect(state_dir: Path, gateway: GatewayClient) -> dict[str, Any]:
     store = StateStore(state_dir)
     runner = _read_json(state_dir / "runner.json")
@@ -284,7 +305,8 @@ def collect(state_dir: Path, gateway: GatewayClient) -> dict[str, Any]:
         "performance": _performance(store, gw, decisions),
         "alerts": _alerts(runner, market, gw, agents, pf),
         "logs": _tail_lines(state_dir / "runner.log", 150),
-        "integrations": [{k: i[k] for k in ("name", "installed", "used_by")} for i in all_status()],
+        "integrations": [{k: i[k] for k in ("name", "installed", "used_by")} for i in all_status()]
+        + _optional_services(state_dir),
         "verification": {"passed": verification["passed"], "counts": verification["counts"]}
         if verification
         else None,

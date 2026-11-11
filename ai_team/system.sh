@@ -127,5 +127,6 @@ case "${1:-}" in
     local) local_only ;;
     telegram) ensure_venv; "$PY" -m ai_team.notifier setup ;;
     raport) ensure_venv; "$PY" -m ai_team.notifier report ;;
-    *) echo "Usage: $0 start|stop|restart|status|logs|verify|telefon|local|telegram|raport"; exit 2 ;;
+    chei) ensure_venv; "$PY" -m ai_team.keys setup ;;
+    *) echo "Usage: $0 start|stop|restart|status|logs|verify|telefon|local|telegram|raport|chei"; exit 2 ;;
 esac

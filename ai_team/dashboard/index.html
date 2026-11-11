@@ -488,7 +488,7 @@ function renderHealth(){
        <dt>Mode</dt><dd><b>${r.mode==="paper"&&r.live_trading===false?"PAPER (live trading disabled)":"UNKNOWN"}</b></dd>
        <dt>Verification</dt><dd>${v?`${v.passed?'<span class="b ok">PASS</span>':'<span class="b bad">FAIL</span>'} ${esc(JSON.stringify(v.counts))}`:"not run"}</dd></dl>`;
   $("#he-alerts").innerHTML = alertsHtml();
-  $("#he-integrations").innerHTML = `<ul class="list">${S.integrations.map(i => `<li><span class="b ${i.installed?"ok":"off"}">${i.installed?"installed":"not installed"}</span> <b>${esc(i.name)}</b> <span class="muted small">used by ${i.used_by.length} agent(s)</span></li>`).join("")}</ul>`;
+  $("#he-integrations").innerHTML = `<ul class="list">${S.integrations.map(i => `<li><span class="b ${i.installed?"ok":"off"}">${i.kind==="key"?(i.installed?"configured":"not configured"):(i.installed?"installed":"not installed")}</span> <b>${esc(i.name)}</b> <span class="muted small">used by ${i.used_by.length} agent(s)</span></li>`).join("")}</ul>`;
   const errs = S.agents.filter(a => (a.errors||[]).length);
   $("#he-errors").innerHTML = errs.length ? `<ul class="list">${errs.map(a => `<li><b>${esc(a.name)}</b> <span class="muted small">${esc(a.errors[a.errors.length-1].ts)}</span><div class="small">${esc(a.errors[a.errors.length-1].error)}</div></li>`).join("")}</ul>` : empty("No agent errors recorded.");
   $("#he-logs").textContent = S.logs.length ? S.logs.join("\n") : "No runner log yet.";

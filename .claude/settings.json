@@ -22,6 +22,8 @@
       "Read(**/telegram.json)",
       "Bash(python -m ai_team.notifier:*)",
       "Bash(python3 -m ai_team.notifier:*)",
+      "Bash(python -m ai_team.keys:*)",
+      "Bash(python3 -m ai_team.keys:*)",
       "Bash(docker:*)",
       "Bash(curl:*)",
       "Bash(wget:*)",

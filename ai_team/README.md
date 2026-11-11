@@ -91,6 +91,7 @@ Double-click these files in the repository root:
 | **`OPRESTE-PORNIREA-AUTOMATA.bat`** | Removes the automatic start |
 | **`OPRESTE-AI.bat`** | Stops everything |
 | **`CONFIGUREAZA-TELEGRAM.bat`** | Connects the bot to your Telegram once (see below) |
+| **`CONFIGUREAZA-CHEI.bat`** | Saves the optional Anthropic (Claude reads the news) and FRED (economic data) keys |
 
 They call `ai_team/system.ps1` (`start|stop|status|telefon|local|autostart|fara-autostart`),
 written for Windows PowerShell 5.1. Python 3.11+ must be installed with "Add python.exe to PATH".
@@ -112,6 +113,24 @@ The token is stored only on that computer, in `~/.ai-trading-desk/telegram.json`
 repository, so downloading a new version keeps it. It is never logged or printed, error
 messages replace it with `<token>`, and the agents are denied reads of that file. The
 notifier only reads the gateway's decisions and portfolio.
+
+### Optional keys: Claude reads the news, FRED economic data
+
+`CONFIGUREAZA-CHEI.bat` (or `ai_team/system.sh chei`, or `python -m ai_team.keys setup`) asks
+for two optional keys, checks each before saving it, and stores them only on that computer in
+`~/.ai-trading-desk/`:
+
+- **Anthropic API key**: the sentiment analyst sends unseen headlines to Claude
+  (`claude-opus-5-5` by default, configurable) at most once an hour, in one request, with
+  low effort and a JSON-schema reply. Each headline is scored once and cached in
+  `state/news_scores.json`. Headlines are treated as untrusted data, server-side refusal
+  fallbacks are enabled, and any failure falls back to the lexicon. This is billed per use by
+  Anthropic.
+- **FRED API key** (free): the macro analyst adds the Fed funds rate, CPI inflation, the
+  10-year Treasury yield and the broad dollar index, refreshed every 6 hours, and blends them
+  into its risk-appetite score. Error messages never contain the key.
+
+The Logs & Health tab shows which keys are configured, never the keys.
 
 ### From your phone
 
@@ -208,11 +227,13 @@ tests detect any change.
 
 ## Public data feeds
 
-These need no account and no key. Headlines and other feed text are treated as data only.
+These need no account and no key, except the two optional ones marked below. Headlines and other feed text are treated as data only.
 
 | Feed | Used by |
 |------|---------|
 | RSS: CoinDesk, Cointelegraph, Decrypt | news-analyst, then sentiment-analyst and event-driven-specialist |
+| Claude (optional Anthropic key) | sentiment-analyst |
+| FRED (optional free key) | macro-economic-analyst |
 | CoinGecko `/coins/markets`, `/global` | fundamental-analyst, macro-economic-analyst |
 | Coinbase Exchange public tickers | arbitrage-strategist (Kraken vs Coinbase, net of fees) |
 | Deribit public option summaries (BTC, ETH) | options-strategist |
@@ -224,8 +245,9 @@ These need no account and no key. Headlines and other feed text are treated as d
 
 - **41 functional**: real computations on market data and the public feeds.
 - **9 partial** (they work, with a stated limitation):
-  - sentiment-analyst and event-driven-specialist: lexicon scoring of headlines;
-  - macro-economic-analyst: crypto-wide data only, no rates or CPI;
+  - sentiment-analyst: Claude scores headlines only with an Anthropic key, otherwise a lexicon;
+  - event-driven-specialist: event tags come from keyword rules;
+  - macro-economic-analyst: US economic data only with a free FRED key, otherwise crypto-wide data;
   - scalping-strategist: REST polling;
   - pairs-trading-strategist: long leg only;
   - order-routing-specialist: one paper venue;

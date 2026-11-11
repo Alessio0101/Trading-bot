@@ -5,3 +5,4 @@ numpy==2.5.4
 langgraph==1.2.20
 pytest==9.2.0
 scikit-learn==1.8.0
+anthropic==2.3.0

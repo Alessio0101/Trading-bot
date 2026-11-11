@@ -177,26 +177,60 @@ NEGATIVE = {
 }
 
 
+def _lexicon_score(headline: str) -> float:
+    words = re.findall(r"[a-z]+", headline.lower())
+    pos = sum(w in POSITIVE for w in words)
+    neg = sum(w in NEGATIVE for w in words)
+    return 0.0 if pos == neg else (pos - neg) / (pos + neg)
+
+
 def sentiment_analyst(ctx: AgentContext) -> HandlerResult:
+    """Headline sentiment: Claude's scores when a key is configured, the lexicon otherwise."""
     news = ctx.upstream("news-analyst")
     if news is None or news.status != "ok":
         raise NeedsIntegration("Needs classified headlines from news-analyst.")
+    items = news.metrics["headlines"]
+    scorer = getattr(ctx.data.feeds, "headline_scores", None)
+    try:
+        claude = scorer([i["headline"] for i in items]) if scorer else {}
+    except Exception:  # scoring is optional: fall back to the lexicon
+        claude = {}
     scored = []
-    for item in news.metrics["headlines"]:
-        words = re.findall(r"[a-z]+", item["headline"].lower())
-        pos = sum(w in POSITIVE for w in words)
-        neg = sum(w in NEGATIVE for w in words)
-        score = 0.0 if pos == neg else (pos - neg) / (pos + neg)
-        scored.append({**item, "score": score})
+    for item in items:
+        c = claude.get(item["headline"])
+        if c is not None:
+            scored.append({**item, "score": c["sentiment"], "event": c["event"], "method": "claude"})
+        else:
+            scored.append({**item, "score": _lexicon_score(item["headline"]), "method": "lexicon"})
     agg = float(np.mean([s["score"] for s in scored])) if scored else 0.0
+    by_claude = sum(1 for s in scored if s["method"] == "claude")
+    method = "claude" if scored and by_claude == len(scored) else "mixed" if by_claude else "lexicon"
     return HandlerResult(
-        f"Sentiment {agg:+.2f} over {len(scored)} headlines",
-        {"sentiment": agg, "scored": scored, "method": "lexicon"},
+        f"Sentiment {agg:+.2f} over {len(scored)} headlines ({by_claude} scored by Claude)",
+        {"sentiment": agg, "scored": scored, "method": method, "claude_scored": by_claude},
     )
 
 
+def _economic_bias(e: dict[str, Any]) -> tuple[float, list[str]]:
+    """-1 (headwind for risk assets) .. +1 (tailwind) from rates, inflation, yields and the dollar."""
+    bias, notes = 0.0, []
+    for value, threshold, weight, up, down in (
+        (e["fed_funds_3m_change"], 0.1, 0.3, "Fed tightening", "Fed easing"),
+        (e["cpi_yoy_pct"] - e["cpi_yoy_3m_ago_pct"], 0.2, 0.2, "inflation rising", "inflation falling"),
+        (e["us10y_1m_change"], 0.25, 0.2, "10y yield rising", "10y yield falling"),
+        (e["dollar_1m_change_pct"], 2.0, 0.2, "dollar strengthening", "dollar weakening"),
+    ):
+        if value > threshold:
+            bias -= weight
+            notes.append(up)
+        elif value < -threshold:
+            bias += weight
+            notes.append(down)
+    return bias, notes
+
+
 def macro_economic_analyst(ctx: AgentContext) -> HandlerResult:
-    """Crypto-wide risk appetite from CoinGecko's global market data."""
+    """Crypto-wide risk appetite (CoinGecko) plus US rates, inflation, yields and dollar (FRED)."""
     try:
         g = ctx.data.feeds.global_market()
     except Exception as e:
@@ -205,18 +239,43 @@ def macro_economic_analyst(ctx: AgentContext) -> HandlerResult:
     btc_dom = float((g.get("market_cap_percentage") or {}).get("btc") or 0.0)
     regime = "risk-on" if change > 1.5 else "risk-off" if change < -1.5 else "neutral"
     total = float((g.get("total_market_cap") or {}).get("usd") or 0.0)
-    return HandlerResult(
+    crypto_appetite = max(-1.0, min(1.0, change / 5))
+    try:
+        econ: dict[str, Any] | None = ctx.data.feeds.economic()
+    except Exception as e:
+        econ, econ_error = None, str(e)
+    else:
+        econ_error = None
+    metrics: dict[str, Any] = {
+        "regime": regime,
+        "total_market_cap_usd": total,
+        "market_cap_change_24h_pct": change,
+        "btc_dominance_pct": btc_dom,
+    }
+    summary = (
         f"Crypto market {regime}: total cap {total / 1e12:.2f}T USD ({change:+.2f}% 24h), "
-        f"BTC dominance {btc_dom:.1f}%",
-        {
-            "regime": regime,
-            "total_market_cap_usd": total,
-            "market_cap_change_24h_pct": change,
-            "btc_dominance_pct": btc_dom,
-            "risk_appetite": max(-1.0, min(1.0, change / 5)),
-            "scope": "crypto market only; no economic data (rates, CPI) feed is connected",
-        },
+        f"BTC dominance {btc_dom:.1f}%"
     )
+    if econ:
+        bias, notes = _economic_bias(econ)
+        metrics |= {
+            "economic": econ,
+            "economic_bias": bias,
+            "economic_notes": notes,
+            "risk_appetite": max(-1.0, min(1.0, 0.6 * crypto_appetite + 0.4 * bias)),
+            "scope": "crypto market + US economy (FRED)",
+        }
+        summary += (
+            f"; Fed funds {econ['fed_funds_pct']:.2f}%, CPI {econ['cpi_yoy_pct']:.1f}% y/y, "
+            f"10y {econ['us10y_pct']:.2f}%: macro {bias:+.1f} ({', '.join(notes) or 'steady'})"
+        )
+    else:
+        metrics |= {
+            "risk_appetite": crypto_appetite,
+            "scope": "crypto market only; economic data unavailable",
+            "economic_error": econ_error,
+        }
+    return HandlerResult(summary, metrics)
 
 
 def fundamental_analyst(ctx: AgentContext) -> HandlerResult:

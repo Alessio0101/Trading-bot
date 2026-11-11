@@ -74,8 +74,12 @@ class KrakenPublicData:
         # so research sees more than Kraken's 720-candle window as the system keeps running.
         self.history = CandleStore(history_dir) if history_dir else None
         from .feeds import PublicFeeds
+        from .llm_news import default_scorer
+        from .state import DEFAULT_STATE_DIR
 
-        self.feeds = PublicFeeds()
+        self.feeds = PublicFeeds(
+            scorer=default_scorer(history_dir.parent if history_dir else DEFAULT_STATE_DIR)
+        )
 
     @staticmethod
     def _symbol(pair: str) -> str:

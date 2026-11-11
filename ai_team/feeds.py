@@ -6,8 +6,11 @@ Free, key-less public data feeds for the agents that previously had no data.
 * global       - CoinGecko /global (total crypto market cap, dominance)
 * second venue - Coinbase Exchange public tickers (for cross-venue comparison)
 * options      - Deribit public option book summaries (BTC, ETH)
+* economic     - FRED: Fed funds rate, CPI, 10-year Treasury yield, broad dollar index
+                 (needs a free FRED API key saved with ``python -m ai_team.keys setup``)
+* headlines    - optional Claude scoring of headlines (ai_team.llm_news), with a saved key
 
-No feed needs an account or credentials. Headlines and other text from these
+Only FRED and Claude need a key, and both are optional. Headlines and other text from these
 feeds are untrusted data: they are only scored and displayed, never executed or
 followed as instructions. ``SyntheticFeeds`` provides deterministic offline data
 for tests and for ``--data synthetic`` runs.
@@ -19,6 +22,7 @@ import json
 import re
 import threading
 import time
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime, timedelta
@@ -26,6 +30,8 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 
 import numpy as np
+
+from . import local_config
 
 
 MAX_BYTES = 3_000_000  # refuse oversized responses
@@ -58,9 +64,15 @@ class PublicFeeds:
     _cache: dict[str, tuple[float, Any]] = {}
     _lock = threading.Lock()
 
-    def __init__(self, opener: urllib.request.OpenerDirector | None = None, timeout: float = 20.0) -> None:
+    def __init__(
+        self,
+        opener: urllib.request.OpenerDirector | None = None,
+        timeout: float = 20.0,
+        scorer: Any = None,
+    ) -> None:
         self._opener = opener or urllib.request.build_opener()
         self.timeout = timeout
+        self.scorer = scorer  # ai_team.llm_news.ClaudeNewsScorer, when a key is configured
 
     def _fetch(self, url: str, retries: int = 2) -> bytes:
         last: Exception | None = None
@@ -77,11 +89,11 @@ class PublicFeeds:
                 time.sleep(0.5 * (attempt + 1))
         raise FeedUnavailable(f"{url} unavailable: {last}")
 
-    def _cached(self, key: str, fn):
+    def _cached(self, key: str, fn, ttl: float | None = None):
         now = time.monotonic()
         with self._lock:
             hit = self._cache.get(key)
-            if hit and now - hit[0] < self.TTL_S:
+            if hit and now - hit[0] < (ttl or self.TTL_S):
                 return hit[1]
         value = fn()
         with self._lock:
@@ -219,6 +231,56 @@ class PublicFeeds:
 
         return self._cached(f"deribit-{asset}", load)
 
+    # ---------------- headline scoring (Claude) ----------------
+    def headline_scores(self, headlines: list[str]) -> dict[str, dict[str, Any]]:
+        if self.scorer is None or not self.scorer.enabled:
+            return {}
+        return self.scorer.scores(headlines)
+
+    # ---------------- economic data (FRED) ----------------
+    def economic(self) -> dict[str, Any]:
+        key = (local_config.load("fred") or {}).get("api_key")
+        if not key:
+            raise FeedUnavailable("no FRED API key configured (python -m ai_team.keys setup)")
+
+        def series(series_id: str, limit: int) -> list[float]:
+            url = (
+                "https://api.stlouisfed.org/fred/series/observations?file_type=json&sort_order=desc"
+                f"&series_id={series_id}&limit={limit}&api_key={urllib.parse.quote(key)}"
+            )
+            try:
+                data = self._json(url)
+            except FeedUnavailable as e:  # the URL carries the key: never let it reach a report
+                raise FeedUnavailable(
+                    str(e).replace(urllib.parse.quote(key), "<key>").replace(key, "<key>")
+                ) from None
+            values = [
+                float(o["value"]) for o in data.get("observations", []) if o.get("value") not in (None, ".")
+            ]
+            if not values:
+                raise FeedUnavailable(f"FRED returned no data for {series_id}")
+            return values  # newest first
+
+        def load():
+            fed = series("FEDFUNDS", 6)
+            cpi = series("CPIAUCSL", 18)
+            y10 = series("DGS10", 40)
+            usd = series("DTWEXBGS", 40)
+            if len(cpi) < 16:
+                raise FeedUnavailable("FRED CPI history too short")
+            return {
+                "fed_funds_pct": fed[0],
+                "fed_funds_3m_change": fed[0] - fed[min(3, len(fed) - 1)],
+                "cpi_yoy_pct": (cpi[0] / cpi[12] - 1) * 100,
+                "cpi_yoy_3m_ago_pct": (cpi[3] / cpi[15] - 1) * 100,
+                "us10y_pct": y10[0],
+                "us10y_1m_change": y10[0] - y10[min(21, len(y10) - 1)],
+                "dollar_1m_change_pct": (usd[0] / usd[min(21, len(usd) - 1)] - 1) * 100,
+                "source": "FRED",
+            }
+
+        return self._cached("fred", load, ttl=6 * 3600)
+
 
 class SyntheticFeeds:
     """Deterministic offline stand-ins with the same shapes as PublicFeeds."""
@@ -284,6 +346,21 @@ class SyntheticFeeds:
             last = float(self.market.ohlcv(p, "1h", 5)["close"].iloc[-1]) * 1.0004
             out[p] = {"last": last, "bid": last * 0.9999, "ask": last * 1.0001, "time": None}
         return out
+
+    def headline_scores(self, headlines: list[str]) -> dict[str, dict[str, Any]]:
+        return {}  # offline runs always use the lexicon
+
+    def economic(self) -> dict[str, Any]:
+        return {
+            "fed_funds_pct": 4.0,
+            "fed_funds_3m_change": -0.25,
+            "cpi_yoy_pct": 2.8,
+            "cpi_yoy_3m_ago_pct": 3.1,
+            "us10y_pct": 4.1,
+            "us10y_1m_change": -0.1,
+            "dollar_1m_change_pct": -0.5,
+            "source": "synthetic",
+        }
 
     def options(self, asset: str) -> list[dict[str, Any]]:
         if asset not in OPTION_ASSETS:
