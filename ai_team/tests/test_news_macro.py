@@ -266,3 +266,18 @@ def test_dashboard_lists_optional_services_without_secrets(tmp_path):
     services = _optional_services(tmp_path)
     assert [s["installed"] for s in services] == [True, False, False]
     assert FAKE_KEY not in json.dumps(services)
+
+
+def test_keys_are_read_without_echo(monkeypatch):
+    prompts = []
+
+    def fake_getpass(prompt):
+        prompts.append(prompt)
+        return ""
+
+    monkeypatch.setattr(keys.getpass, "getpass", fake_getpass)
+    monkeypatch.setattr("builtins.input", lambda _: pytest.fail("a key prompt must not echo"))
+    keys.setup(out=lambda _: None, checks={"anthropic": lambda k: None, "fred": lambda k: None})
+    assert len(prompts) == 2 and "Anthropic" in prompts[0] and "FRED" in prompts[1]
+    assert keys.mask("sk-ant-abcdefgh1234") == "...1234 (19 caractere)"
+    assert keys.mask("short") == "(5 caractere)"

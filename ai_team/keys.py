@@ -16,6 +16,7 @@ ai_team.local_config). Prompts are in Romanian because the person running the bo
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import sys
 import urllib.parse
@@ -53,17 +54,29 @@ def check_fred(key: str) -> str | None:
     return None if ok else "raspuns neasteptat de la FRED"
 
 
+def mask(secret: str) -> str:
+    """Enough to recognise a key without revealing it."""
+    return f"...{secret[-4:]} ({len(secret)} caractere)" if len(secret) > 8 else f"({len(secret)} caractere)"
+
+
 def setup(
-    input_fn: Callable[[str], str] = input,
+    input_fn: Callable[[str], str] | None = None,
     out: Callable[[str], None] = print,
     checks: dict[str, Callable[[str], str | None]] | None = None,
+    secret_fn: Callable[[str], str] | None = None,
 ) -> int:
     checks = checks or {"anthropic": check_anthropic, "fred": check_fred}
+    # Keys are read without echo, so they never appear on screen or in a screenshot.
+    if input_fn is None:
+        input_fn, secret_fn = input, secret_fn or getpass.getpass
+    secret_fn = secret_fn or input_fn
     out("Chei optionale pentru bot. Apasa doar Enter ca sa sari peste una.")
+    out("Cheile NU se vad pe ecran cand le lipesti (click dreapta) - e normal. Apoi apasa Enter.")
     out("")
     out("1) Claude citeste stirile (cheie de la console.anthropic.com, cost mic pe utilizare).")
-    key = input_fn("   Cheia Anthropic (incepe cu sk-ant-): ").strip()
+    key = secret_fn("   Cheia Anthropic (incepe cu sk-ant-): ").strip()
     if key:
+        out(f"   Primit: {mask(key)}")
         problem = checks["anthropic"](key)
         if problem:
             out(f"   Nu am salvat cheia Anthropic: {problem}.")
@@ -74,8 +87,9 @@ def setup(
             out(f"   Salvat ({model}).")
     out("")
     out("2) Date economice SUA de la FRED (cheie gratuita de la fredaccount.stlouisfed.org).")
-    key = input_fn("   Cheia FRED (32 de caractere): ").strip()
+    key = secret_fn("   Cheia FRED (32 de caractere): ").strip()
     if key:
+        out(f"   Primit: {mask(key)}")
         problem = checks["fred"](key)
         if problem:
             out(f"   Nu am salvat cheia FRED: {problem}.")

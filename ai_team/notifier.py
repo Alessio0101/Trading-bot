@@ -15,6 +15,7 @@ Messages are in Romanian because they are for the person running the bot.
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import logging
 import os
@@ -297,11 +298,16 @@ class Notifier:
             time.sleep(POLL_S)
 
 
-def setup(input_fn=input, out=print, telegram_factory=Telegram) -> int:
+def setup(input_fn=None, out=print, telegram_factory=Telegram, secret_fn=None) -> int:
+    # The token is read without echo, so it never appears on screen or in a screenshot.
+    if input_fn is None:
+        input_fn, secret_fn = input, secret_fn or getpass.getpass
+    secret_fn = secret_fn or input_fn
     out("Configurare notificari Telegram (o singura data).")
     out("1. In Telegram cauta @BotFather, scrie /newbot si urmeaza pasii.")
     out("2. BotFather iti da un token, de forma 123456789:ABC...")
-    token = input_fn("Lipeste tokenul aici si apasa Enter: ").strip()
+    out("   Tokenul NU se vede pe ecran cand il lipesti (click dreapta) - e normal.")
+    token = secret_fn("Lipeste tokenul aici si apasa Enter: ").strip()
     if ":" not in token:
         out("Tokenul nu pare corect (trebuie sa contina ':'). Incearca din nou.")
         return 1
