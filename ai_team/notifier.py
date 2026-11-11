@@ -48,7 +48,7 @@ PROBLEM_GRACE_S = 300  # a problem must last 5 minutes before it is reported (re
 RUNNER_SILENT_S = 600
 MARKET_STALE_S = 300
 DRAWDOWN_WARN = -0.08
-DAILY_HOUR = 9
+DAILY_HOUR = 0  # hourly overview from this local hour (0 = around the clock)
 
 
 class TelegramError(RuntimeError):
@@ -360,24 +360,41 @@ class Notifier:
         return sent
 
     def daily_status(self, st: dict[str, Any], now: datetime) -> int:
-        """One short "all good" message a day, from DAILY_HOUR local time."""
+        """An overview every hour (local time): agents, account, profit/loss, positions, problems."""
         local = now.astimezone()
-        today = local.date().isoformat()
-        if local.hour < self.daily_hour or st.get("last_daily") == today:
+        slot = local.strftime("%Y-%m-%dT%H")
+        if local.hour < self.daily_hour or st.get("last_status") == slot:
             return 0
-        st["last_daily"] = today
+        st["last_status"] = slot
         pf = self.gateway.portfolio() or {}
         agents = _read_json(self.state_dir / "agents.json") or {}
         online = sum(1 for a in agents.values() if a.get("online"))
+        runner = _read_json(self.state_dir / "runner.json") or {}
+        last = runner.get("last_cycle") or {}
         problems = [p.get("text") for p in (st.get("problems") or {}).values() if p.get("sent")]
-        head = "✅ Botul merge." if not problems else "⚠️ Botul merge, dar sunt probleme active:"
-        lines = [head]
+        head = "✅ Botul merge" if not problems else "⚠️ Botul merge, dar sunt probleme:"
+        lines = [f"{head} · {local:%H:%M}"]
         lines += [f"  · {p}" for p in problems]
-        if pf.get("equity") is not None:
-            open_n = len(pf.get("positions") or {})
-            lines.append(f"Cont (pe hârtie): {_money(pf['equity'])} USDT · poziții deschise: {open_n}")
         lines.append(f"Agenți online: {online}/{len(agents) or 50}")
-        lines.append("Dacă într-o zi nu primești acest mesaj, verifică dacă e pornit calculatorul.")
+        if last:
+            lines.append(
+                f"Ultimul ciclu: {'OK' if last.get('ok') else 'EȘUAT'} · propuneri {last.get('proposals', 0)}"
+            )
+        if pf.get("equity") is not None:
+            try:
+                start = float(self.gateway.limits().get("starting_equity"))
+            except (OSError, TypeError, ValueError):
+                start = None
+            realised = sum(r["pnl"] for r in pf.get("realised") or [])
+            unrealised = sum(u["pnl"] for u in (pf.get("unrealised") or {}).values())
+            total = f" ({(pf['equity'] / start - 1) * 100:+.2f}%)" if start else ""
+            lines.append(f"Cont (pe hârtie): {_money(pf['equity'])} USDT{total}")
+            lines.append(f"Profit închis: {_signed(realised)} · deschis: {_signed(unrealised)} USDT")
+            for pair, u in sorted((pf.get("unrealised") or {}).items()):
+                lines.append(f"  · {pair}: {_signed(u['pnl'])} USDT")
+            if not pf.get("unrealised"):
+                lines.append("Poziții deschise: niciuna")
+        lines.append("Dacă nu primești acest mesaj o oră, verifică dacă e pornit calculatorul.")
         self.telegram.send("\n".join(lines))
         return 1
 

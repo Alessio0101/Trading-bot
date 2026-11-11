@@ -303,16 +303,19 @@ class TestNotifier:
         problems = n.problems(later)
         assert len(problems) == 1 and expected in next(iter(problems.values()))
 
-    def test_daily_status_once_a_day_after_the_hour(self, tmp_path):
-        n, _gw, http = self.make(tmp_path)
+    def test_hourly_overview(self, tmp_path):
+        n, gw, http = self.make(tmp_path)
         n.tick(NOW)
-        n.daily_hour = NOW.astimezone().hour  # due now, whatever the test machine's time zone
+        n.daily_hour = 0
+        gw.pf["unrealised"] = {"ETH/USDT": {"pnl": 8.77}}
+        gw.pf["realised"] = [{"pnl": 3.61}]
         assert n.tick(NOW) == 1
         text = self.texts(http)[-1]
-        assert text.startswith("✅ Botul merge.") and "Agenți online: 50/50" in text and "10,100.00" in text
-        assert n.tick(NOW + timedelta(hours=1)) == 0  # once per day
-        write_healthy_state(tmp_path, NOW + timedelta(days=1))
-        assert n.tick(NOW + timedelta(days=1)) == 1
+        assert text.startswith("✅ Botul merge") and "Agenți online: 50/50" in text
+        assert "10,100.00 USDT (+1.00%)" in text and "+3.61" in text and "ETH/USDT: +8.77" in text
+        assert n.tick(NOW + timedelta(minutes=30)) == 0  # once per hour
+        write_healthy_state(tmp_path, NOW + timedelta(hours=1))
+        assert n.tick(NOW + timedelta(hours=1)) == 1
 
     def test_unconfigured_notifier_does_nothing(self, tmp_path):
         assert nt.Notifier(FakeGateway(), tmp_path).tick(NOW) == 0

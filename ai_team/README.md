@@ -124,8 +124,9 @@ The supervisor also runs `ai_team.notifier`. Once Telegram is configured it send
 every paper buy and sell (price, amount, stop-loss / take-profit, profit), an alert when something
 has been wrong for 5 minutes (gateway not answering, runner silent for 10 minutes, a failed
 cycle, Kraken prices older than 5 minutes, the paper account 8 % below its peak) and a
-"resolved" message when it clears, a short "the bot is running" message every day from 09:00
-local time (if it does not arrive, the computer or the bot is off), and a weekly report
+"resolved" message when it clears, an overview every hour (agents online, last cycle, account
+value and profit, open positions with their profit, active problems; if it does not arrive, the
+computer or the bot is off), and a weekly report
 (account value, the week's change, closed trades by strategy, open positions and the agents with
 the best signal record). Rejected proposals are not sent.
 
