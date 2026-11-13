@@ -391,6 +391,10 @@ class Coordinator:
                 stress=st.metrics.get("scenarios"),
             )
             blocking = []
+            # The gateway allows one position per pair; re-sending a held pair every cycle
+            # only filled its log with rejections.
+            if pair in portfolio.get("positions", {}):
+                blocking.append("already holding a paper position in this pair")
             if any(r["verdict"] != "APPROVE" for r in reviews):
                 blocking.append("independent reviews did not approve the strategy")
             if not tca.metrics.get("acceptable", False):

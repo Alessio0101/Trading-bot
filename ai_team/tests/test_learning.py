@@ -277,3 +277,32 @@ class TestBacktestWithStops:
     def test_never_long_is_flat(self):
         m = self.run([(100, 101, 99, 100)], [0.0, 0.0])
         assert m["trades"] == 0 and m["total_return"] == 0 and m["win_rate"] is None
+
+
+def test_coordinator_does_not_resend_a_pair_already_held(tmp_path):
+    from ai_team.coordinator import Coordinator
+    from ai_team.data import SyntheticMarketData
+    from ai_team.state import StateStore
+
+    class HoldingGateway:
+        def __init__(self):
+            self.submitted = []
+
+        def health(self):
+            return {"ok": True, "mode": "paper"}
+
+        def portfolio(self):
+            return {"positions": {"BTC/USDT": {"amount": 0.01, "entry_price": 70000.0}}, "equity": 10_000.0}
+
+        def submit(self, proposal):
+            self.submitted.append(proposal)
+            return {"approved": False, "reasons": ["test"]}
+
+    gw = HoldingGateway()
+    coord = Coordinator(SyntheticMarketData(seed=5, drift=0.003), gw, StateStore(tmp_path))
+    summary = coord.cycle(["BTC/USDT"], "1h")
+    longs = [p for p in summary["pairs"]["BTC/USDT"]["proposals"] if p["side"] == "long"]
+    assert longs, "the synthetic uptrend should produce a long proposal"
+    assert all(p["coordinator_decision"] == "withheld" for p in longs)
+    assert all("already holding a paper position in this pair" in p["reasons"] for p in longs)
+    assert not [p for p in gw.submitted if p["side"] == "long"]

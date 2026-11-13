@@ -239,6 +239,66 @@ function Remove-Autostart {
     Write-Host "Pornirea automata a fost dezactivata. (Setarile de sleep nu au fost schimbate.)"
 }
 
+# ---------------- dashboard from anywhere, privately (Tailscale) ----------------
+$RemoteFile = Join-Path $State "remote_url.txt"
+$FirewallRule = "AI Trading Desk dashboard (Tailscale only)"
+
+function Get-TailscaleExe {
+    $cmd = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($p in @("$env:ProgramFiles\Tailscale\tailscale.exe", "${env:ProgramFiles(x86)}\Tailscale\tailscale.exe")) {
+        if (Test-Path $p) { return $p }
+    }
+    return $null
+}
+
+function Enable-Remote {
+    # The dashboard stays read-only and password-less, so it is opened only to devices in the
+    # owner's own Tailscale network (100.64.0.0/10), never to the internet.
+    $ts = Get-TailscaleExe
+    if (-not $ts) {
+        Write-Host ""
+        Write-Host "Tailscale nu este instalat pe acest calculator." -ForegroundColor Yellow
+        Write-Host "1. Deschide https://tailscale.com/download/windows si instaleaza-l."
+        Write-Host "2. Logheaza-te (de exemplu cu contul Google)."
+        Write-Host "3. Pe iPhone instaleaza aplicatia Tailscale din App Store si logheaza-te cu ACELASI cont."
+        Write-Host "4. Porneste din nou acest fisier."
+        exit 1
+    }
+    $ip = ""
+    # Through cmd, so a warning Tailscale writes to stderr cannot stop this script (PS 5.1).
+    try { $ip = ("" + (& cmd.exe /c """$ts"" ip -4 2>nul" | Select-Object -First 1)).Trim() } catch { $ip = "" }
+    if ($ip -notmatch "^100\.") {
+        Write-Host "Tailscale este instalat, dar nu esti conectat." -ForegroundColor Yellow
+        Write-Host "Deschide Tailscale (iconita de langa ceas), logheaza-te si porneste din nou acest fisier."
+        exit 1
+    }
+    if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
+        Write-Host "Windows iti va cere permisiunea (Da/Yes) ca dashboard-ul sa fie vazut DOAR prin Tailscale ..."
+        $rule = "New-NetFirewallRule -DisplayName '$FirewallRule' -Direction Inbound -Protocol TCP -LocalPort $DashboardPort -RemoteAddress 100.64.0.0/10 -Action Allow -Profile Any | Out-Null"
+        Start-Process powershell -Verb RunAs -Wait -ArgumentList "-NoProfile -Command $rule"
+        if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
+            Write-Host "Regula de firewall nu a fost adaugata (ai apasat Nu?). Porneste din nou fisierul." -ForegroundColor Red
+            exit 1
+        }
+    }
+    if ((Get-DashboardHost) -ne "0.0.0.0") {
+        Set-Content -Path $HostFile -Value "0.0.0.0"
+        Stop-System
+        Start-System
+    }
+    $url = "http://$($ip):$DashboardPort"
+    Set-Content -Path $RemoteFile -Value $url -Encoding ASCII
+    Write-Host ""
+    Write-Host "==============================================================" -ForegroundColor Green
+    Write-Host "  DE ORIUNDE (iPhone cu Tailscale pornit) deschide in Safari:" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "      $url" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "==============================================================" -ForegroundColor Green
+    Write-Host "Linkul apare si in mesajul orar de pe Telegram. Merge doar pe dispozitivele tale din Tailscale."
+}
+
 # ---------------- one-click update (ACTUALIZEAZA.bat) ----------------
 $UpdateRepo = "Alessio0101/Trading-bot"
 $UpdateBranch = "claude/trading-bot-platform-w9ip9u"
@@ -350,6 +410,7 @@ switch ($Command.ToLower()) {
     "raport"         { Initialize-Venv; & $Py -m ai_team.notifier report; if ($LASTEXITCODE -ne 0) { exit 1 } }
     "chei"           { Initialize-Venv; & $Py -m ai_team.keys setup; if ($LASTEXITCODE -ne 0) { exit 1 } }
     "actualizeaza"   { Update-System }
+    "oriunde"        { Enable-Remote }
     "dupa-actualizare" { Complete-Update }
-    default          { Write-Host "Utilizare: system.ps1 start|stop|status|telefon|local|autostart|fara-autostart|telegram|raport|chei|actualizeaza"; exit 2 }
+    default          { Write-Host "Utilizare: system.ps1 start|stop|status|telefon|local|autostart|fara-autostart|telegram|raport|chei|actualizeaza|oriunde"; exit 2 }
 }

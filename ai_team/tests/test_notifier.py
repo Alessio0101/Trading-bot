@@ -313,9 +313,14 @@ class TestNotifier:
         text = self.texts(http)[-1]
         assert text.startswith("✅ Botul merge") and "Agenți online: 50/50" in text
         assert "10,100.00 USDT (+1.00%)" in text and "+3.61" in text and "ETH/USDT: +8.77" in text
-        assert n.tick(NOW + timedelta(minutes=30)) == 0  # once per hour
-        write_healthy_state(tmp_path, NOW + timedelta(hours=1))
-        assert n.tick(NOW + timedelta(hours=1)) == 1
+        assert "Tailscale" not in text
+        (tmp_path / "remote_url.txt").write_text("http://100.101.102.103:8800\n")
+        write_healthy_state(tmp_path, NOW + timedelta(hours=2))
+        n.tick(NOW + timedelta(hours=2))
+        assert "Dashboard (Tailscale): http://100.101.102.103:8800" in self.texts(http)[-1]
+        assert n.tick(NOW + timedelta(hours=2, minutes=30)) == 0  # once per hour
+        write_healthy_state(tmp_path, NOW + timedelta(hours=3))
+        assert n.tick(NOW + timedelta(hours=3)) == 1
 
     def test_unconfigured_notifier_does_nothing(self, tmp_path):
         assert nt.Notifier(FakeGateway(), tmp_path).tick(NOW) == 0

@@ -394,6 +394,12 @@ class Notifier:
                 lines.append(f"  · {pair}: {_signed(u['pnl'])} USDT")
             if not pf.get("unrealised"):
                 lines.append("Poziții deschise: niciuna")
+        try:
+            remote = (self.state_dir / "remote_url.txt").read_text().strip()
+        except OSError:
+            remote = ""
+        if remote.startswith("http://100."):  # written by TELEFON-DE-ORIUNDE.bat (Tailscale)
+            lines.append(f"Dashboard (Tailscale): {remote}")
         lines.append("Dacă nu primești acest mesaj o oră, verifică dacă e pornit calculatorul.")
         self.telegram.send("\n".join(lines))
         return 1

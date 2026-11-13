@@ -111,6 +111,7 @@ Double-click these files in the repository root:
 | **`OPRESTE-AI.bat`** | Stops everything |
 | **`CONFIGUREAZA-TELEGRAM.bat`** | Connects the bot to your Telegram once (see below) |
 | **`ACTUALIZEAZA.bat`** | Updates to the newest version: downloads it next to the current folder, moves the Python environment, the paper account and the history into it, points the logon start at it and starts it. Keys and the Telegram token stay in `%USERPROFILE%\.ai-trading-desk`. The old folder is kept as a backup (the next update offers to delete it); if anything fails, the old version is started again |
+| **`TELEFON-DE-ORIUNDE.bat`** | Opens the read-only dashboard to your own devices from anywhere through Tailscale: checks that Tailscale is installed and connected, adds a Windows firewall rule (after a UAC prompt) that allows port 8800 only from the Tailscale range 100.64.0.0/10, and prints the `http://100.x.y.z:8800` link, which also appears in the hourly Telegram overview |
 | **`CONFIGUREAZA-CHEI.bat`** | Saves the optional Anthropic (Claude reads the news) and FRED (economic data) keys |
 
 They call `ai_team/system.ps1` (`start|stop|status|telefon|local|autostart|fara-autostart`),
