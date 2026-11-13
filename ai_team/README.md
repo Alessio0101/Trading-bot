@@ -99,6 +99,22 @@ log in `supervisor.log`. "Stop" creates `ai_team/state/supervisor.stop`, so the 
 shut down cleanly, including on Windows. Bus messages and coordinator decisions are trimmed to their
 newest 20,000 lines, so the disk does not fill up.
 
+### On a VPS (Ubuntu 22.04 / 24.04)
+
+`ai_team/vps/setup.sh` installs everything with one command and can be run again to update:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Alessio0101/Trading-bot/refs/heads/claude/trading-bot-platform-w9ip9u/ai_team/vps/setup.sh | sudo bash
+```
+
+It creates the unprivileged user `aibot` and checks out the bot in `/opt/ai-trading-desk`. The
+supervisor runs as the systemd service `ai-trading-desk`, which starts at boot and restarts on
+failure. The firewall keeps SSH open and allows the read-only dashboard only from Tailscale
+(100.64.0.0/10); the risk gateway stays on 127.0.0.1. Tailscale is installed and the dashboard
+link printed. `ai_team/vps/import.sh` moves the paper account, history and keys copied from a
+Windows PC into place, without pids, locks or the old dashboard address, and then deletes the
+copies.
+
 ### Windows
 
 Double-click these files in the repository root:

@@ -31,7 +31,7 @@ skip() { [[ "$SKIP" == *" $1 "* ]]; }
 say "1/6 Instalez Python, git si firewall-ul"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip git ca-certificates curl ufw >/dev/null
+apt-get install -y -qq python3 python3-venv python3-pip git ca-certificates curl ufw rsync >/dev/null
 
 say "2/6 Utilizatorul '$BOT_USER' si codul botului in $DIR"
 id "$BOT_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin "$BOT_USER"
@@ -90,6 +90,9 @@ if ! skip tailscale; then
         tailscale up
     fi
     TS_IP="$(tailscale ip -4 | head -n1)"
+    # The hourly Telegram overview links to this address.
+    echo "http://$TS_IP:$PORT" > "$DIR/ai_team/state/remote_url.txt"
+    chown "$BOT_USER:$BOT_USER" "$DIR/ai_team/state/remote_url.txt"
 else
     TS_IP="100.x.y.z"
 fi
