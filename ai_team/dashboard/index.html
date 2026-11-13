@@ -327,7 +327,10 @@ function renderAgentRows(){
     if (a.category!==cat){cat = a.category; rows += `<tr><td colspan="11" class="small muted" style="background:var(--panel2);font-weight:700;text-transform:uppercase;letter-spacing:.05em">${esc(cat)}</td></tr>`}
     const p = a.performance;
     const sigs = (a.signals||[]).map(s => `${sig(s.side==="long"?"BUY":"SELL")} ${esc(s.pair)} <span class="muted">${num(s.confidence,2)}</span>`).join("<br>") || '<span class="muted">–</span>';
-    const errs = (a.errors||[]).slice(-1).map(e => `<span class="b bad" title="${esc(e.error)}">${esc(e.error).slice(0,60)}</span>`).join("") || '<span class="muted">–</span>';
+    // An error followed by a later successful run is history, not a current problem.
+    const errs = (a.errors||[]).slice(-1).map(e => (a.status !== "error" && a.updated_at && e.ts < a.updated_at)
+      ? `<span class="b off" title="${esc(e.error)}">resolved · ${esc(since(e.ts))}</span>`
+      : `<span class="b bad" title="${esc(e.error)}">${esc(e.error).slice(0,60)}</span>`).join("") || '<span class="muted">–</span>';
     rows += `<tr class="clickable" data-a="${esc(a.id)}"><td class="n">${a.number}</td><td><b>${esc(a.name)}</b><div class="mono muted">${esc(a.id)}</div></td>
       <td>${agentBadge(a)}</td><td>${capBadge(a.capability)}</td><td class="small">${esc(a.current_task)||'<span class="muted">idle</span>'}</td>
       <td class="small">${esc(a.latest_analysis)||'<span class="muted">not run yet</span>'}<div class="muted small">${since(a.updated_at)}</div></td>
