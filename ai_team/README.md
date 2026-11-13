@@ -115,6 +115,15 @@ link printed. `ai_team/vps/import.sh` moves the paper account, history and keys 
 Windows PC into place, without pids, locks or the old dashboard address, and then deletes the
 copies.
 
+`ai_team/vps/harden.sh` locks SSH down once the owner's key is in `/root/.ssh/authorized_keys`
+(it refuses to run without one): password logins off (`sshd_config.d/00-ai-trading-desk.conf`,
+which sorts before cloud-init's file), fail2ban, and automatic security updates.
+
+Every day after 04:00 local time the notifier sends a `.tar.gz` backup to Telegram with the
+paper account (`import-gateway/`) and what the bot learned (`import-ai/`: signal ledger, tuned
+levels, candle history, score caches). Keys and tokens are never included. To restore on any
+server: extract it into `/tmp` and run `ai_team/vps/import.sh`.
+
 ### Windows
 
 Double-click these files in the repository root:

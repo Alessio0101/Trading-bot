@@ -20,9 +20,11 @@ import json
 import logging
 import os
 import sys
+import tarfile
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -48,6 +50,20 @@ PROBLEM_GRACE_S = 300  # a problem must last 5 minutes before it is reported (re
 RUNNER_SILENT_S = 600
 MARKET_STALE_S = 300
 DRAWDOWN_WARN = -0.08
+BACKUP_HOUR = 4  # local time; the backup goes out once a day after this hour
+BACKUP_MAX_BYTES = 45_000_000  # Telegram bots may upload up to 50 MB
+BACKUP_GATEWAY_FILES = ["portfolio.json", "decisions.jsonl"]
+BACKUP_AI_FILES = [
+    "signal_ledger.json",
+    "tuned_params.json",
+    "history",
+    "news_scores.json",
+    "reddit_scores.json",
+    "podcasts_scores.json",
+    "notifier.json",
+    "agents.json",
+    "signals.json",
+]
 DAILY_HOUR = 0  # hourly overview from this local hour (0 = around the clock)
 
 
@@ -91,9 +107,26 @@ class Telegram:
         return text.replace(self.token, "<token>") if self.token else text
 
     def call(self, method: str, **params: Any) -> Any:
+        return self._post(method, urllib.parse.urlencode(params).encode(), {})
+
+    def send_document(self, path: Path, caption: str = "") -> None:
+        """Upload a file to the chat (multipart/form-data; Telegram bots accept up to 50 MB)."""
+        boundary = uuid.uuid4().hex
+        parts = []
+        for name, value in (("chat_id", self.chat_id), ("caption", caption[:1000])):
+            parts.append(
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+            )
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="{path.name}"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n".encode()
+        )
+        body = b"".join(parts) + path.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+        self._post("sendDocument", body, {"Content-Type": f"multipart/form-data; boundary={boundary}"})
+
+    def _post(self, method: str, data: bytes, headers: dict[str, str]) -> Any:
         url = f"{API}/bot{self.token}/{method}"
-        data = urllib.parse.urlencode(params).encode()
-        req = urllib.request.Request(url, data=data, method="POST")
+        req = urllib.request.Request(url, data=data, method="POST", headers=headers)
         try:
             with self._opener.open(req, timeout=self.timeout) as r:
                 body = json.loads(r.read())
@@ -238,13 +271,16 @@ class Notifier:
         state_dir: Path,
         telegram: Telegram | None = None,
         review_writer: Any = None,
+        gateway_state_dir: Path | None = None,
     ) -> None:
         self.gateway = gateway
         self.state_dir = Path(state_dir)
+        self.gateway_state_dir = Path(gateway_state_dir) if gateway_state_dir else None
         self.state_file = self.state_dir / "notifier.json"
         self.telegram = telegram
         self.review_writer = review_writer or write_review
         self.daily_hour = DAILY_HOUR
+        self.backup_hour = BACKUP_HOUR
 
     def _state(self) -> dict[str, Any]:
         try:
@@ -283,6 +319,7 @@ class Notifier:
         try:
             sent += self.check_health(st, now)
             sent += self.daily_status(st, now)
+            sent += self.daily_backup(st, now)
             for d in decisions or []:
                 k = key(d)
                 if k in seen:
@@ -404,6 +441,47 @@ class Notifier:
         self.telegram.send("\n".join(lines))
         return 1
 
+    # ---------------- daily backup ----------------
+    def make_backup(self, out: Path) -> Path:
+        """A .tar.gz the VPS import script restores: the paper account and what the bot learned.
+
+        Layout: import-gateway/ (portfolio, gateway decisions) and import-ai/ (signal ledger,
+        tuned levels, candle history, score caches, notifier state). Keys and tokens are
+        never included; large rolling logs are left out.
+        """
+        with tarfile.open(out, "w:gz") as tar:
+            if self.gateway_state_dir is not None:
+                for name in BACKUP_GATEWAY_FILES:
+                    p = self.gateway_state_dir / name
+                    if p.exists():
+                        tar.add(p, arcname=f"import-gateway/{name}")
+            for name in BACKUP_AI_FILES:
+                p = self.state_dir / name
+                if p.exists():
+                    tar.add(p, arcname=f"import-ai/{name}")
+        return out
+
+    def daily_backup(self, st: dict[str, Any], now: datetime) -> int:
+        local = now.astimezone()
+        today = local.date().isoformat()
+        if local.hour < self.backup_hour or st.get("last_backup") == today:
+            return 0
+        st["last_backup"] = today
+        out = self.state_dir / f"backup-{today}.tar.gz"
+        try:
+            self.make_backup(out)
+            if out.stat().st_size > BACKUP_MAX_BYTES:
+                log.warning("backup %s is too large for Telegram (%s bytes)", out.name, out.stat().st_size)
+                return 0
+            self.telegram.send_document(
+                out,
+                "💾 Copie de rezervă zilnică: contul de test și tot ce a învățat botul (fără chei). "
+                "Păstreaz-o: cu ea botul se reface pe orice server (ai_team/vps/import.sh).",
+            )
+        finally:
+            out.unlink(missing_ok=True)
+        return 1
+
     def send_report(self, now: datetime | None = None) -> None:
         if self.telegram is None:
             raise TelegramError("Telegram is not configured")
@@ -494,13 +572,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("command", choices=["run", "setup", "report"])
     ap.add_argument("--gateway", default="http://127.0.0.1:8790")
     ap.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR)
+    ap.add_argument(
+        "--gateway-state-dir",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "risk_gateway" / "state",
+    )
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")  # Windows consoles may lack some characters
     if a.command == "setup":
         return setup()
-    notifier = Notifier(GatewayClient(a.gateway), a.state_dir)
+    notifier = Notifier(GatewayClient(a.gateway), a.state_dir, gateway_state_dir=a.gateway_state_dir)
     if a.command == "report":
         cfg = load_config()
         if cfg is None:

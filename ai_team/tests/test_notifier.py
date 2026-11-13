@@ -22,7 +22,10 @@ class FakeTelegramHTTP:
 
     def open(self, req, timeout=None):
         method = req.full_url.rsplit("/", 1)[-1]
-        params = dict(p.split("=", 1) for p in req.data.decode().split("&")) if req.data else {}
+        if (req.get_header("Content-type") or "").startswith("multipart/"):
+            params = {"multipart": req.data}
+        else:
+            params = dict(p.split("=", 1) for p in req.data.decode().split("&")) if req.data else {}
         self.calls.append((method, params))
         if self.fail:
             raise self.fail
@@ -30,6 +33,7 @@ class FakeTelegramHTTP:
             "getMe": {"username": "my_trading_bot"},
             "getUpdates": [{"message": {"chat": {"id": 42}}}],
             "sendMessage": {"message_id": 1},
+            "sendDocument": {"message_id": 2},
         }[method]
         return io.BytesIO(json.dumps({"ok": True, "result": result}).encode())
 
@@ -188,7 +192,8 @@ class TestNotifier:
         if healthy:
             write_healthy_state(tmp_path, NOW)
         n = nt.Notifier(gw, tmp_path, nt.Telegram(TOKEN, "42", opener=http), review_writer=lambda s: None)
-        n.daily_hour = 24  # no daily message unless a test asks for it
+        n.daily_hour = 24  # no hourly overview unless a test asks for it
+        n.backup_hour = 24  # no daily backup unless a test asks for it
         return n, gw, http
 
     def texts(self, http):
@@ -321,6 +326,41 @@ class TestNotifier:
         assert n.tick(NOW + timedelta(hours=2, minutes=30)) == 0  # once per hour
         write_healthy_state(tmp_path, NOW + timedelta(hours=3))
         assert n.tick(NOW + timedelta(hours=3)) == 1
+
+    def test_daily_backup_restorable_and_without_secrets(self, tmp_path):
+        import io as _io
+        import tarfile
+
+        n, _gw, http = self.make(tmp_path)
+        gw_dir = tmp_path / "gateway"
+        gw_dir.mkdir()
+        (gw_dir / "portfolio.json").write_text('{"cash": 1}')
+        (gw_dir / "decisions.jsonl").write_text("{}\n")
+        (tmp_path / "signal_ledger.json").write_text("[]")
+        (tmp_path / "history").mkdir()
+        (tmp_path / "history" / "BTC-USDT_4h.csv").write_text("date,close\n")
+        (tmp_path / "messages.jsonl").write_text("big log\n")  # left out
+        (tmp_path / "telegram.json").write_text('{"token": "secret"}')  # never in a backup
+        n.gateway_state_dir = gw_dir
+        n.tick(NOW)
+        n.backup_hour = 0
+        assert n.tick(NOW) == 1
+        method, params = http.calls[-1]
+        assert method == "sendDocument"
+        body = params["multipart"]
+        data = body[body.index(b"\r\n\r\n", body.index(b'name="document"')) + 4 : body.rindex(b"\r\n--")]
+        with tarfile.open(fileobj=_io.BytesIO(data), mode="r:gz") as tar:
+            names = set(tar.getnames())
+        assert {
+            "import-gateway/portfolio.json",
+            "import-gateway/decisions.jsonl",
+            "import-ai/signal_ledger.json",
+        } <= names
+        assert "import-ai/history/BTC-USDT_4h.csv" in names
+        assert not any("messages" in x or "telegram" in x for x in names)
+        assert TOKEN.encode() not in body.split(b'name="document"')[0].split(b"chat_id")[0]
+        assert not list(tmp_path.glob("backup-*.tar.gz"))  # the local copy is removed
+        assert n.tick(NOW + timedelta(hours=2)) == 0  # once a day
 
     def test_unconfigured_notifier_does_nothing(self, tmp_path):
         assert nt.Notifier(FakeGateway(), tmp_path).tick(NOW) == 0

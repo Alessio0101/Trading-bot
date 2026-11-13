@@ -136,7 +136,17 @@ def build_children(a: argparse.Namespace, state_dir: Path) -> list[Child]:
         ),
         Child(
             "notifier",
-            ["-m", "ai_team.notifier", "run", "--gateway", gw, "--state-dir", str(state_dir)],
+            [
+                "-m",
+                "ai_team.notifier",
+                "run",
+                "--gateway",
+                gw,
+                "--state-dir",
+                str(state_dir),
+                "--gateway-state-dir",
+                str(a.gateway_state_dir),
+            ],
             state_dir,
         ),
         Child(
