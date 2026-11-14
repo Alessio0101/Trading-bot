@@ -1,6 +1,8 @@
 name: AI trading team
 
 on:
+  # Manual runs ("Run workflow" in the Actions tab), e.g. to re-check the branch on demand.
+  workflow_dispatch:
   pull_request:
     paths:
       - "ai_team/**"
